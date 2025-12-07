@@ -391,50 +391,107 @@ TEST_ENV=test pytest -n auto -m "not sequential" --alluredir=./allure-results
 
 #### 2FA Session Capture Script
 
-A separate script captures authenticated browser sessions to bypass 2FA during automated testing. Sessions are stored in an **external directory outside the project** for security and portability (~/.refua_sessions/).
+A separate script captures authenticated browser sessions to bypass 2FA during automated testing. Sessions are stored in an **external directory outside the project** for security and portability (~/.refua_sessions/). Supports capturing sessions for **ALL supported browsers** (chromium, firefox, webkit, safari) with separate session files per browser per environment.
 
-**Purpose:** Capture session ONCE per environment, then reuse for all tests. Eliminates need for manual 2FA interaction on every test run.
+**Purpose:** Capture sessions ONCE per environment/browser combination, then reuse for all tests. Eliminates need for manual 2FA interaction on every test run. Supports both single-browser and batch multi-browser capture.
 
-**Usage:**
+**Multi-Browser Support:**
+
+The script can capture authenticated sessions for all supported browsers:
+- **Chromium**: Default, best compatibility, fastest
+- **Firefox**: Alternative to Chromium, good compatibility
+- **WebKit**: Safari-compatible browser engine, mobile testing
+- **Safari**: macOS only, native Safari engine (requires macOS)
+
+**Usage Examples:**
 
 ```bash
-# Capture session for test environment
+# Capture sessions for ALL supported browsers (default)
 python scripts/capture_session.py --env test --user john.doe
+# Creates: auth_state_test_chromium_latest.json
+#          auth_state_test_firefox_latest.json
+#          auth_state_test_webkit_latest.json
+#          auth_state_test_safari_latest.json (macOS only)
 
-# Capture for preprod environment
+# Capture session for specific browser only
+python scripts/capture_session.py --env test --user john.doe --browser chromium
+python scripts/capture_session.py --env test --user john.doe --browser firefox
+python scripts/capture_session.py --env test --user john.doe --browser webkit
+python scripts/capture_session.py --env test --user john.doe --browser safari
+
+# Capture for preprod environment (all browsers)
 python scripts/capture_session.py --env preprod --user john.doe
 
-# Capture for production (if 2FA bypass enabled)
+# Capture for production (if 2FA bypass enabled, all browsers)
 python scripts/capture_session.py --env prod --user john.doe
 
-# Use custom session directory
-python scripts/capture_session.py --env test --user john.doe --session-dir /custom/path
+# Docker volume mount support (external session storage)
+SESSION_DIR=/sessions python scripts/capture_session.py --env test --user john.doe
+python scripts/capture_session.py --env test --user john.doe --session-dir /sessions
 
-# Capture for iPhone device (future P2.2 - device support)
+# Capture for iPhone device with all browsers
 python scripts/capture_session.py --env test --user john.doe --device iphone
+
+# Capture for specific browser and device
+python scripts/capture_session.py --env test --user john.doe --device iphone --browser webkit
 ```
 
-**Script Flow:**
+**Script Flow (Multi-Browser Batch Capture):**
+
+When running without `--browser` or with `--browser all`:
 
 1. Validates environment (test, preprod, prod)
 2. Creates/verifies session directory (respects SESSION_DIR env var)
-3. **Launches Chromium browser with headless=false (interactive window)**
-4. Navigates to login page: `{base_url}/login`
-5. **Waits for user to complete login + 2FA manually (5-minute timeout)**
-6. Detects successful authentication
-7. **Saves session with metadata and 3-day TTL**
-8. Displays success message with session expiration date
+3. **For each supported browser (chromium, firefox, webkit, safari):**
+   - Launches browser with headless=false (interactive window)
+   - Navigates to login page: `{base_url}/login`
+   - Waits for user to complete login + 2FA manually (5-minute timeout)
+   - Detects successful authentication
+   - Saves session with browser-specific filename: `auth_state_{env}_{browser}_latest.json`
+   - If browser fails: logs error and continues to next browser
+4. **Displays summary with:**
+   - Successfully captured sessions (browser and file path)
+   - Failed browsers (if any) with error details
+   - Session expiration date (now + 3 days)
 
 **Session Storage:**
 
 ```
 ~/.refua_sessions/
 ├── auth_state_test_chromium_latest.json       # Test env, Chromium browser
+├── auth_state_test_firefox_latest.json        # Test env, Firefox browser
+├── auth_state_test_webkit_latest.json         # Test env, WebKit browser
+├── auth_state_test_safari_latest.json         # Test env, Safari browser (macOS)
 ├── auth_state_preprod_chromium_latest.json    # Preprod env, Chromium browser
-└── auth_state_prod_chromium_latest.json       # Production env, Chromium browser
+├── auth_state_preprod_firefox_latest.json     # Preprod env, Firefox browser
+├── auth_state_preprod_webkit_latest.json      # Preprod env, WebKit browser
+├── auth_state_preprod_safari_latest.json      # Preprod env, Safari browser (macOS)
+├── auth_state_prod_chromium_latest.json       # Production env, Chromium browser
+├── auth_state_prod_firefox_latest.json        # Production env, Firefox browser
+├── auth_state_prod_webkit_latest.json         # Production env, WebKit browser
+└── auth_state_prod_safari_latest.json         # Production env, Safari browser (macOS)
 ```
 
-**Session File Contents:**
+**Docker Volume Support:**
+
+For Docker containers, mount external volume at `/sessions`:
+
+```bash
+# Docker run with external session storage
+docker run -v ~/.refua_sessions:/sessions myimage \
+  python scripts/capture_session.py --env test --user john.doe --session-dir /sessions
+
+# Docker compose configuration
+services:
+  test-automation:
+    volumes:
+      - ./sessions:/sessions  # Mount external sessions directory
+    environment:
+      - SESSION_DIR=/sessions  # Tell script where to store sessions
+    command: python scripts/capture_session.py --env test --user john.doe
+```
+
+**Session File Contents (Same Structure for All Browsers):**
 
 ```json
 {
@@ -469,24 +526,40 @@ python scripts/capture_session.py --env test --user john.doe --device iphone
 
 **Key Features:**
 
+- **Multi-Browser Capture**: Captures sessions for all supported browsers (chromium, firefox, webkit, safari) in one run
+- **Separate Session Files**: Each browser gets its own session file per environment (e.g., `auth_state_test_chromium_latest.json`)
+- **Batch Capture**: Default behavior captures all browsers; continue on browser failure
+- **Selective Capture**: Use `--browser` flag to capture specific browser only
 - **3-Day TTL**: Sessions valid for 3 days, then must be recaptured
-- **External Storage**: Sessions stored outside project for security
-- **Automatic Loading**: Tests automatically load session without user interaction
-- **Environment-Specific**: Each environment (test, preprod, prod) has separate session
-- **Error Recovery**: Clear error messages if session missing or expired
+- **External Storage**: Sessions stored outside project for security and Docker portability
+- **Automatic Loading**: Tests automatically load appropriate browser's session without user interaction
+- **Environment-Specific**: Each environment (test, preprod, prod) has separate sessions per browser
+- **Docker Ready**: Respects SESSION_DIR environment variable for Docker volume mounts
+- **Error Recovery**: Clear error messages if session missing or expired; gracefully handles browser-specific failures
 
 **Session Lifespan:**
 
-- Captured: User completes login + 2FA manually
+- Captured: User completes login + 2FA manually per browser
 - Valid: 3 days from capture time
 - Expired: Must re-run capture script to refresh
-- Re-captured: New session overwrites old one (same filename)
+- Re-captured: New session overwrites old one (same filename per browser)
 
 #### Using Sessions in Tests
 
+Tests automatically load the appropriate browser's captured session without requiring user interaction.
+
 ```bash
-# Automated tests use captured session automatically (desktop)
+# Automated tests use captured session automatically (desktop, chromium)
 TEST_ENV=test SKIP_2FA=true pytest --alluredir=./allure-results
+
+# Run tests on Firefox browser
+BROWSER=firefox TEST_ENV=test SKIP_2FA=true pytest --alluredir=./allure-results
+
+# Run tests on WebKit browser (Safari-compatible)
+BROWSER=webkit TEST_ENV=test SKIP_2FA=true pytest --alluredir=./allure-results
+
+# Run tests on Safari browser (macOS only)
+BROWSER=safari TEST_ENV=test SKIP_2FA=true pytest --alluredir=./allure-results
 
 # Run tests on iPhone with captured session
 TEST_ENV=test DEVICE=iphone SKIP_2FA=true pytest --alluredir=./allure-results
@@ -494,12 +567,49 @@ TEST_ENV=test DEVICE=iphone SKIP_2FA=true pytest --alluredir=./allure-results
 # Run tests on Android with captured session
 TEST_ENV=test DEVICE=android SKIP_2FA=true pytest --alluredir=./allure-results
 
+# Run tests on iPhone with specific browser
+BROWSER=webkit TEST_ENV=test DEVICE=iphone SKIP_2FA=true pytest --alluredir=./allure-results
+
+# Run tests in parallel with multi-browser sessions
+TEST_ENV=test SKIP_2FA=true pytest -n auto --alluredir=./allure-results
+
+# Run specific browser in parallel
+BROWSER=firefox TEST_ENV=test SKIP_2FA=true pytest -n 4 --alluredir=./allure-results
+
 # To force re-authentication (not recommended for 2FA systems):
 TEST_ENV=test SKIP_2FA=false pytest --alluredir=./allure-results  # Uses credentials from .env file
 
-# Use custom session directory
-TEST_ENV=test SESSION_DIR=/path/to/sessions SKIP_2FA=true pytest --alluredir=./allure-results
+# Use custom session directory (Docker volumes)
+TEST_ENV=test SESSION_DIR=/sessions SKIP_2FA=true pytest --alluredir=./allure-results
+
+# Docker with multi-browser sessions
+docker run -v ~/.refua_sessions:/sessions myimage \
+  bash -c "BROWSER=firefox TEST_ENV=test SESSION_DIR=/sessions SKIP_2FA=true pytest --alluredir=./allure-results"
 ```
+
+**Multi-Browser Test Execution Strategy:**
+
+```bash
+# Sequential execution: test all 4 browsers one after another
+for browser in chromium firefox webkit safari; do
+  BROWSER=$browser TEST_ENV=test SKIP_2FA=true pytest --alluredir=./allure-results/browser_$browser
+done
+
+# Parallel execution: test different browsers with different workers
+TEST_ENV=test SKIP_2FA=true pytest -n auto --alluredir=./allure-results
+
+# Device-specific browser testing
+BROWSER=webkit TEST_ENV=test DEVICE=iphone SKIP_2FA=true pytest -n auto --alluredir=./allure-results
+BROWSER=chromium TEST_ENV=test DEVICE=android SKIP_2FA=true pytest -n auto --alluredir=./allure-results
+```
+
+**How Session Loading Works:**
+
+1. Tests request browser and device combination (e.g., firefox + desktop)
+2. BaseTest fixture loads session from: `~/.refua_sessions/auth_state_test_firefox_latest.json`
+3. Session applied to browser context (cookies, localStorage)
+4. Tests run with 2FA already bypassed (no user interaction needed)
+5. Test completes with authenticated session
 
 #### Credentials Configuration
 
