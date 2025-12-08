@@ -4,41 +4,131 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**refuaAutomationCore** is a test automation framework for the MEDITEK medical system built with Python and Playwright. The architecture separates the **core framework** (reusable infrastructure and page object models) from the **test framework** (test implementation). It supports multi-environment execution (test, preprod, prod) with secure 2FA handling and Allure reporting integration.
+**refuaAutomationCore** is a reusable test automation framework library for the MEDITEK medical system built with Python and Playwright. This repository contains **only the core framework** - reusable infrastructure, base classes, and configuration management.
 
-## Project Structure
+**Test implementation is in a separate repository** (`refuaAutomationTests`) that depends on this core framework package. This separation ensures:
+- Core framework can be versioned and released independently
+- Multiple test suites can reuse the same core framework
+- Clear separation of concerns (framework vs. test implementation)
+- Easier dependency management and package distribution
 
-### Core Framework (`refua_core/`)
+The framework supports multi-environment execution (test, preprod, prod) with secure 2FA handling, Allure reporting integration, mobile device emulation, and parallel test execution.
 
-Reusable infrastructure and page object models for automation:
+## Repository Architecture
 
-- **`refua_core/config/`** - Configuration and session management
+### This Repository: refuaAutomationCore (Core Framework)
 
-  - `environment.py`: Centralized environment configuration (base URLs, API endpoints, credentials, auth settings). Uses `EnvironmentManager` singleton pattern. Loads settings from `TEST_ENV` environment variable and credentials from `.env` files per environment.
-  - `session_manager.py`: Manages 2FA bypass via session JSON files in external directory. Validates session state (cookies, localStorage, metadata) before test execution and provides auth failure detection with meaningful error messages.
-  - `device_config.py` or `devices.json`: Mobile device configuration (iPhone/Android profiles). Defines device viewport, user agent, and device-specific settings for Playwright emulation.
+**Contains:** Reusable infrastructure, configuration management, and base classes
+**Purpose:** Published as a Python package (`refua-automation-core`)
+**Used by:** Test implementation repositories
 
-- **`refua_core/core/`** - Core testing infrastructure
+```
+refuaAutomationCore/  (This repo - the core framework package)
+├── refua_core/               # Core framework package (published on PyPI/internal)
+│   ├── config/              # Configuration and session management
+│   │   ├── environment.py
+│   │   ├── session_manager.py
+│   │   ├── device_config.py
+│   │   └── devices.json
+│   ├── core/                # Core testing infrastructure
+│   │   ├── base_test.py
+│   │   ├── device_manager.py
+│   │   ├── visual_regression.py
+│   │   └── artifact_manager.py
+│   └── __init__.py
+├── scripts/                  # Utility scripts (for framework users)
+│   └── capture_session.py   # Session capture script
+├── setup.py                 # Package configuration (pip installable)
+├── requirements.txt         # Core framework dependencies
+├── CLAUDE.md               # This file
+└── README.md               # Framework documentation
+```
 
-  - `base_test.py`: Base test class for Playwright-based tests with session validation hooks
-  - `device_manager.py`: Manages device emulation for mobile testing (iOS/Android setup)
-  - `visual_regression.py`: Visual regression testing with Figma integration. Compares actual pages against Figma design frames automatically during test execution
-  - `artifact_manager.py`: Manages test artifacts (videos, screenshots). Automatically captures on test execution and conditionally saves based on pass/fail status. Deletes passing test artifacts, retains failing test artifacts for debugging
+### Separate Repository: refuaAutomationTests (Test Implementation)
 
-- **`refua_core/pages/`** - Page Object Models (POM)
-  - `mainPage.py`: Main page object for MEDITEK UI interactions
-  - Additional page objects extend base POM pattern for page-specific interactions
-  - All page interactions encapsulated to support maintainability and reusability
-  - Responsive design support for mobile and desktop viewports
+**Contains:** Test cases, page objects, test fixtures, and test configuration
+**Purpose:** Test implementation for MEDITEK application
+**Depends on:** `refua-automation-core` package
 
-### Test Framework (`tests/`)
+```
+refuaAutomationTests/        (Separate repo - test implementation)
+├── refua_tests/            # Test package
+│   ├── pages/             # Page Object Models (POM)
+│   │   ├── login_page.py
+│   │   ├── dashboard_page.py
+│   │   └── base_page.py
+│   ├── tests/             # Test cases
+│   │   ├── test_auth.py
+│   │   ├── test_smoke.py
+│   │   └── test_regression.py
+│   └── fixtures/          # Test fixtures
+│       └── conftest.py
+├── .env.test              # Environment credentials
+├── .env.preprod
+├── .env.prod
+├── pytest.ini            # Pytest configuration
+├── requirements.txt      # Test dependencies (includes refua-automation-core)
+├── CLAUDE.md            # Test-specific guidance
+└── README.md            # Test implementation guide
+```
 
-Test implementation using pytest with Allure reporting:
+## Core Framework Structure (refuaAutomationCore)
 
-- **`tests/`** - Pytest test cases and fixtures
-  - Test organization by feature/module
-  - Support for markers: `@pytest.mark.smoke`, `@pytest.mark.regression`, `@pytest.mark.2fa_required`, etc.
-  - Future support for Gherkin-style BDD tests via pytest plugins
+### `refua_core/config/`
+
+Configuration and session management components:
+
+- **`environment.py`**: Centralized environment configuration
+  - `EnvironmentManager` singleton class
+  - Base URLs, API endpoints per environment (test, preprod, prod)
+  - Credential loading from `.env` files
+  - Uses `TEST_ENV` environment variable
+
+- **`session_manager.py`**: 2FA session bypass management
+  - Session file validation (cookies, localStorage)
+  - Session state validation before test execution
+  - Auth failure detection with meaningful error messages
+  - Session TTL management (3-day expiration)
+
+- **`devices.json`**: Mobile device configuration
+  - iPhone profiles (12, 13, 14, 15)
+  - Android profiles (Pixel, Galaxy)
+  - Desktop profile
+  - Device-specific viewport, UA, touch settings
+
+### `refua_core/core/`
+
+Core testing infrastructure components:
+
+- **`base_test.py`**: Base test class for Playwright-based tests
+  - Session validation hooks
+  - Browser initialization/teardown
+  - Common test utilities
+
+- **`device_manager.py`**: Mobile device emulation management
+  - Device profile loading from `devices.json`
+  - Device configuration application to browser context
+  - Multi-device support
+
+- **`visual_regression.py`**: Visual regression testing with Figma
+  - Figma design frame comparison
+  - Screenshot comparison with diff reporting
+  - Optional per-page visual checks
+
+- **`artifact_manager.py`**: Test artifact management
+  - Video recording configuration
+  - Screenshot capture
+  - Conditional retention (delete on pass, keep on fail)
+  - Timestamp-based artifact organization
+
+### `scripts/`
+
+Utility scripts provided by framework:
+
+- **`capture_session.py`**: Manual 2FA session capture
+  - Interactive browser login
+  - Session file generation
+  - Multi-browser support (chromium, firefox, webkit, safari)
 
 ### Key Design Patterns
 
@@ -50,19 +140,125 @@ Test implementation using pytest with Allure reporting:
 6. **Visual Regression Testing**: Page objects include optional Figma design frame URLs for automatic UI comparison. Visual checks only run if `FIGMA_FRAME_URL` is set (not null), detected during test execution
 7. **Artifact Management**: Automatic video and screenshot capture during test execution. On test pass: artifacts automatically deleted. On test fail: artifacts retained in timestamped directory for debugging. Works seamlessly on local machines and Docker containers
 
-## Development Commands
+## Development & Usage
 
-### Setup and Installation
+### Setup and Installation (Core Framework)
+
+This section is for developers working on the **refuaAutomationCore** framework itself.
+
+#### Development Environment Setup
 
 ```bash
+# Clone the core framework repository
+git clone <refuaAutomationCore-repo-url>
+cd refuaAutomationCore
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
 # Install dependencies
 pip install -r requirements.txt
 
-# Install package in development mode
+# Install package in development mode (editable)
 pip install -e .
+
+# Verify installation
+python -c "from refua_core.config.environment import EnvironmentManager; print('Success')"
 ```
 
-### Running Tests
+#### Package Configuration (setup.py)
+
+The core framework is distributed as a Python package. The `setup.py` file should be configured as follows:
+
+```python
+# setup.py
+from setuptools import setup, find_packages
+
+setup(
+    name="refua-automation-core",
+    version="1.0.0",  # Increment for releases
+    description="Reusable test automation framework for MEDITEK",
+    author="Your Team",
+    packages=find_packages(),
+    python_requires=">=3.9",
+    install_requires=[
+        "playwright>=1.40.0",
+        "python-dotenv>=1.0.0",
+        "requests>=2.31.0",
+    ],
+    extras_require={
+        "figma": ["requests>=2.31.0"],  # For visual regression
+        "dev": [
+            "pytest>=7.0.0",
+            "black>=23.0.0",
+            "flake8>=6.0.0",
+        ],
+    },
+    include_package_data=True,
+    package_data={
+        "refua_core": ["config/devices.json"],  # Include device config
+    },
+)
+```
+
+#### Publishing the Package
+
+```bash
+# Build distribution packages
+python setup.py sdist bdist_wheel
+
+# Option 1: Publish to PyPI (public)
+twine upload dist/*
+
+# Option 2: Publish to internal package registry
+twine upload -r internal dist/*
+
+# Option 3: Local installation from test repo
+# In refuaAutomationTests/requirements.txt:
+# refua-automation-core @ git+https://github.com/org/refuaAutomationCore.git@main
+```
+
+#### Version Management
+
+```bash
+# Update version in setup.py before release
+# Example: 1.0.0 → 1.1.0 for minor release
+
+# Tag release in git
+git tag v1.1.0
+git push origin v1.1.0
+
+# Publish release notes on GitHub
+```
+
+### Using the Framework (Test Implementation)
+
+This section is for developers creating tests in the **refuaAutomationTests** repository.
+
+```bash
+# Clone the test implementation repository
+git clone <refuaAutomationTests-repo-url>
+cd refuaAutomationTests
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies (includes refua-automation-core from PyPI or git)
+pip install -r requirements.txt
+
+# Verify installation
+python -c "from refua_core.config.environment import EnvironmentManager; print('Success')"
+
+# Create session directory for 2FA sessions
+mkdir -p ~/.refua_sessions
+
+# Run tests (must set TEST_ENV)
+TEST_ENV=test pytest --alluredir=./allure-results
+```
+
+### Running Tests (From Test Repository)
 
 #### Basic Test Execution
 
@@ -79,6 +275,61 @@ TEST_ENV=test pytest tests/test_file.py --alluredir=./allure-results
 # Run a specific test function
 TEST_ENV=test pytest tests/test_file.py::test_function --alluredir=./allure-results
 ```
+
+## For Different Roles
+
+### 👨‍💻 Framework Developers (Working on refuaAutomationCore)
+
+You are in the right repository. Tasks include:
+- Improving core framework components (EnvironmentManager, SessionStateManager, etc.)
+- Adding new framework features (DeviceManager, ArtifactManager, etc.)
+- Fixing bugs in framework code
+- Updating framework dependencies
+- Publishing new versions of the package
+
+**Start with:** Development & Usage → Setup and Installation (Core Framework)
+
+### 🧪 Test Authors (Working on refuaAutomationTests)
+
+You need to clone a **separate repository** (refuaAutomationTests) that depends on this core framework. Tasks include:
+- Creating and maintaining test cases
+- Building page objects for the application
+- Organizing tests into test suites
+- Running and debugging tests
+- Integrating tests into CI/CD
+
+**Start with:** Use the instructions in **refuaAutomationTests** repository documentation
+
+### 🏗️ Framework Architects
+
+Both repositories are involved:
+- This repo (refuaAutomationCore): Framework architecture, versioning, compatibility
+- Test repo (refuaAutomationTests): Test structure, organization, scaling
+
+**Important:** Changes to this core framework may affect all test repositories that depend on it. Coordinate updates accordingly.
+
+## Documentation Organization
+
+**Core Framework Documentation** (this repository - refuaAutomationCore):
+- Framework architecture and design patterns
+- Core component APIs (EnvironmentManager, SessionStateManager, etc.)
+- Framework installation and development (pip installable package)
+- Framework versioning and release process
+- Package distribution (PyPI, internal registry)
+
+**Test Implementation Documentation** (separate repository - refuaAutomationTests):
+- Running tests (all test execution commands)
+- Test organization and structure
+- Page objects and test fixtures
+- Creating new tests
+- CI/CD integration and pipeline
+- Test result analysis
+
+**Content Below:** All remaining documentation about test execution, debugging, CI/CD, etc. applies to the **test repository**. For detailed how-tos, refer to the **refuaAutomationTests** repository documentation.
+
+### Quick Reference to Test Commands
+
+All test execution commands shown below are **executed from the test repository** (refuaAutomationTests), not from this core framework repository.
 
 #### Test Selection and Grouping
 
