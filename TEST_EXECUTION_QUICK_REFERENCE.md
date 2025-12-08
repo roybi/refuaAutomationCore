@@ -2,7 +2,15 @@
 
 ## ✅ Correct Parameter Format
 
-**ALL environment variables BEFORE `pytest` command:**
+**ALL parameters at END of pytest command:**
+
+```bash
+pytest tests/ -v --alluredir=./allure-results --test-env=test --browser=firefox --device=iphone
+└──────────────────────────────────────────────┘  └─────────────────────────────────────────┘
+    Test Path + Pytest Options                    Framework Parameters (at END)
+```
+
+## ✅ Alternative: Environment Variables (Before pytest)
 
 ```bash
 TEST_ENV=test BROWSER=firefox DEVICE=iphone pytest tests/ -v --alluredir=./allure-results
@@ -14,55 +22,55 @@ TEST_ENV=test BROWSER=firefox DEVICE=iphone pytest tests/ -v --alluredir=./allur
 
 ### Basic Execution
 ```bash
-TEST_ENV=test pytest tests/
+pytest tests/ --test-env=test
 ```
 
 ### With Browser
 ```bash
-BROWSER=firefox TEST_ENV=test pytest tests/
-BROWSER=webkit TEST_ENV=test pytest tests/
-BROWSER=safari TEST_ENV=test pytest tests/
+pytest tests/ --test-env=test --browser=firefox
+pytest tests/ --test-env=test --browser=webkit
+pytest tests/ --test-env=test --browser=safari
 ```
 
 ### With Device
 ```bash
-DEVICE=iphone TEST_ENV=test pytest tests/
-DEVICE=android TEST_ENV=test pytest tests/
-DEVICE=iphone_14 TEST_ENV=test pytest tests/
+pytest tests/ --test-env=test --device=iphone
+pytest tests/ --test-env=test --device=android
+pytest tests/ --test-env=test --device=iphone_14
 ```
 
 ### With Multiple Parameters
 ```bash
-BROWSER=webkit DEVICE=iphone_14 SKIP_2FA=true TEST_ENV=test pytest tests/
+pytest tests/ --test-env=test --browser=webkit --device=iphone_14 --skip-2fa=true
 ```
 
 ### Parallel Execution
 ```bash
-TEST_ENV=test pytest -n auto tests/
-TEST_ENV=test pytest -n 4 --dist=loadscope tests/
+pytest tests/ -n auto --test-env=test
+pytest tests/ -n 4 --dist=loadscope --test-env=test
 ```
 
 ### With Allure Reports
 ```bash
-TEST_ENV=test pytest --alluredir=./allure-results tests/
+pytest tests/ --alluredir=./allure-results --test-env=test
 allure serve ./allure-results
 ```
 
 ### With Verbose Output
 ```bash
-TEST_ENV=test pytest -v tests/
-TEST_ENV=test pytest -v -s tests/  # Show print output
+pytest tests/ -v --test-env=test
+pytest tests/ -v -s --test-env=test  # Show print output
 ```
 
 ### With Test Filtering
 ```bash
-TEST_ENV=test pytest -k "login" tests/
-TEST_ENV=test pytest -m smoke tests/
+pytest tests/ -k "login" --test-env=test
+pytest tests/ -m smoke --test-env=test
 ```
 
 ### Docker with Custom Session Directory
 ```bash
-SESSION_DIR=/sessions TEST_ENV=test pytest tests/
+pytest tests/ --test-env=test --session-dir=/sessions
 ```
 
 ## 🔧 Environment Variables
@@ -95,82 +103,91 @@ SESSION_DIR=/sessions TEST_ENV=test pytest tests/
 
 ### 1. Run all tests with verbose output
 ```bash
-TEST_ENV=test pytest -v tests/
+pytest tests/ -v --test-env=test
 ```
 
 ### 2. Run specific test file
 ```bash
-TEST_ENV=test pytest tests/test_auth.py
+pytest tests/test_auth.py --test-env=test
 ```
 
 ### 3. Run specific test function
 ```bash
-TEST_ENV=test pytest tests/test_auth.py::test_login_success
+pytest tests/test_auth.py::test_login_success --test-env=test
 ```
 
 ### 4. Run tests matching pattern
 ```bash
-TEST_ENV=test pytest -k "login" tests/
-TEST_ENV=test pytest -k "test_auth and not slow" tests/
+pytest tests/ -k "login" --test-env=test
+pytest tests/ -k "test_auth and not slow" --test-env=test
 ```
 
 ### 5. Run with specific marker
 ```bash
-TEST_ENV=test pytest -m smoke tests/
+pytest tests/ -m smoke --test-env=test
 ```
 
 ### 6. Run in parallel (4 workers)
 ```bash
-TEST_ENV=test pytest -n 4 tests/
+pytest tests/ -n 4 --test-env=test
 ```
 
 ### 7. Run on mobile device
 ```bash
-DEVICE=iphone TEST_ENV=test pytest tests/
+pytest tests/ --test-env=test --device=iphone
 ```
 
 ### 8. Run with specific browser
 ```bash
-BROWSER=firefox TEST_ENV=test pytest tests/
+pytest tests/ --test-env=test --browser=firefox
 ```
 
 ### 9. Run with Allure reporting
 ```bash
-TEST_ENV=test pytest --alluredir=./allure-results tests/
+pytest tests/ --alluredir=./allure-results --test-env=test
 ```
 
 ### 10. Full example with all options
 ```bash
-TEST_ENV=test \
-BROWSER=webkit \
-DEVICE=iphone_14 \
-SKIP_2FA=true \
-RECORD_VIDEO=true \
-CAPTURE_SCREENSHOTS=true \
 pytest tests/ \
 -v \
 -n 4 \
 --alluredir=./allure-results \
--m smoke
+-m smoke \
+--test-env=test \
+--browser=webkit \
+--device=iphone_14 \
+--skip-2fa=true \
+--record-video=true \
+--capture-screenshots=true
 ```
 
 ## ❌ Common Mistakes
 
 ```bash
-# WRONG - env vars after pytest
-pytest tests/ TEST_ENV=test BROWSER=firefox
+# WRONG - parameters before pytest options
+pytest tests/ --test-env=test -v
 
-# WRONG - pytest options mixed with env vars
-TEST_ENV=test pytest -v DEVICE=iphone tests/
+# WRONG - mixing old env var format with new format
+TEST_ENV=test pytest tests/ --browser=firefox
 
-# WRONG - env vars at the end
-pytest tests/ -v TEST_ENV=test
-
-# WRONG - missing TEST_ENV
-pytest tests/
+# WRONG - missing --test-env
+pytest tests/ --browser=firefox
 
 # WRONG - unsupported browser
-BROWSER=chrome TEST_ENV=test pytest tests/
+pytest tests/ --test-env=test --browser=chrome
+
+# WRONG - pytest options after parameters
+pytest tests/ --test-env=test --browser=firefox -v
+```
+
+**CORRECT:**
+```bash
+# ✅ Parameters at end
+pytest tests/ -v --test-env=test --browser=firefox
+
+# ✅ OR use environment variables
+TEST_ENV=test BROWSER=firefox pytest tests/ -v
 ```
 
 ## 🐳 Docker Execution
@@ -178,11 +195,16 @@ BROWSER=chrome TEST_ENV=test pytest tests/
 ```bash
 # With external session volume
 docker run -v ~/.refua_sessions:/sessions myimage \
-  sh -c "SESSION_DIR=/sessions TEST_ENV=test pytest tests/"
+  sh -c "pytest tests/ --test-env=test --session-dir=/sessions"
 
 # Docker compose
 docker-compose run test-automation \
-  sh -c "TEST_ENV=test pytest -n auto tests/"
+  sh -c "pytest tests/ -n auto --test-env=test"
+
+# With all parameters
+docker run -v ~/.refua_sessions:/sessions myimage \
+  sh -c "pytest tests/ -v -n 4 --alluredir=./allure-results \
+  --test-env=test --browser=firefox --device=iphone --session-dir=/sessions"
 ```
 
 ## 📊 What Gets Logged

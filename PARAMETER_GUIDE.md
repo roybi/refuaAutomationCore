@@ -2,15 +2,23 @@
 
 ## Overview
 
-When running tests with the refuaAutomationCore framework, **all environment parameters must be passed BEFORE the `pytest` command**. Pytest options are passed AFTER the command.
+When running tests with the refuaAutomationCore framework, **all test execution parameters are passed at the END of the pytest command after test paths and options**.
 
 ## ✅ CORRECT FORMAT
 
 ```bash
-ENV_VAR1=value1 ENV_VAR2=value2 pytest [OPTIONS] [TEST_PATH]
+pytest [TEST_PATH] [PYTEST_OPTIONS] --test-env=VALUE --browser=VALUE --device=VALUE [MORE_PARAMS]
 ```
 
 ### Example:
+```bash
+pytest tests/ -v --alluredir=./allure-results --test-env=test --browser=firefox --device=iphone
+```
+
+## ✅ ALTERNATIVE: ENVIRONMENT VARIABLES (BEFORE pytest)
+
+For backward compatibility, you can also use environment variables BEFORE the pytest command:
+
 ```bash
 TEST_ENV=test BROWSER=firefox DEVICE=iphone pytest tests/ -v --alluredir=./allure-results
 ```
@@ -18,14 +26,11 @@ TEST_ENV=test BROWSER=firefox DEVICE=iphone pytest tests/ -v --alluredir=./allur
 ## ❌ INCORRECT FORMAT
 
 ```bash
-# WRONG - environment variables after pytest
-pytest tests/ TEST_ENV=test BROWSER=firefox
+# WRONG - parameters mixed with pytest options
+pytest --test-env=test tests/ -v
 
-# WRONG - pytest options mixed with environment variables
-TEST_ENV=test pytest -v DEVICE=iphone tests/
-
-# WRONG - environment variables at the end
-pytest tests/ -v TEST_ENV=test
+# WRONG - pytest option after parameters
+pytest tests/ --test-env=test --browser=firefox -v
 ```
 
 ## Environment Variables (BEFORE pytest)

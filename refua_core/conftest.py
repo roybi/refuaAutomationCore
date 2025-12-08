@@ -38,9 +38,38 @@ def pytest_configure(config):
     """
     Pytest hook: Configure pytest and validate test environment.
 
-    This hook runs before tests execute. It validates that all required
-    environment parameters are set and logs the configuration.
+    This hook runs before tests execute. It:
+    1. Converts pytest options to environment variables (if provided)
+    2. Validates that all required environment parameters are set
+    3. Logs the configuration for visibility
+
+    Allows parameters to be passed at END of pytest command:
+        pytest tests/ --test-env=test --browser=firefox --device=iphone
     """
+    # Convert pytest options to environment variables
+    # This allows parameters to be passed at the END of the pytest command
+
+    if config.getoption("--test-env"):
+        os.environ["TEST_ENV"] = config.getoption("--test-env")
+
+    if config.getoption("--browser"):
+        os.environ["BROWSER"] = config.getoption("--browser")
+
+    if config.getoption("--device"):
+        os.environ["DEVICE"] = config.getoption("--device")
+
+    if config.getoption("--skip-2fa"):
+        os.environ["SKIP_2FA"] = config.getoption("--skip-2fa")
+
+    if config.getoption("--session-dir"):
+        os.environ["SESSION_DIR"] = config.getoption("--session-dir")
+
+    if config.getoption("--record-video"):
+        os.environ["RECORD_VIDEO"] = config.getoption("--record-video")
+
+    if config.getoption("--capture-screenshots"):
+        os.environ["CAPTURE_SCREENSHOTS"] = config.getoption("--capture-screenshots")
+
     # Validate environment before tests start
     try:
         validate_environment()
@@ -77,9 +106,58 @@ def pytest_addoption(parser):
     """
     Add custom pytest command-line options.
 
-    These options can be passed at the END of the pytest command:
-        pytest --headless --slow-motion=100 tests/
+    These options can be passed at the END of the pytest command AFTER all test paths:
+        pytest tests/ --test-env=test --browser=firefox --device=iphone
+
+    This allows environment variables to be passed as pytest arguments:
+        pytest tests/ --test-env=test --browser=firefox --device=iphone \\
+                      --skip-2fa=true --session-dir=~/.refua_sessions
     """
+    # Environment parameter options
+    parser.addoption(
+        "--test-env",
+        action="store",
+        default=None,
+        help="Target environment: test, preprod, or prod (REQUIRED)",
+    )
+    parser.addoption(
+        "--browser",
+        action="store",
+        default="chromium",
+        help="Browser engine: chromium, firefox, webkit, or safari (default: chromium)",
+    )
+    parser.addoption(
+        "--device",
+        action="store",
+        default="desktop",
+        help="Device profile: desktop, iphone, android, etc. (default: desktop)",
+    )
+    parser.addoption(
+        "--skip-2fa",
+        action="store",
+        default=None,
+        help="Bypass 2FA: true or false (default: true for test/preprod)",
+    )
+    parser.addoption(
+        "--session-dir",
+        action="store",
+        default=None,
+        help="External session storage directory (default: ~/.refua_sessions)",
+    )
+    parser.addoption(
+        "--record-video",
+        action="store",
+        default="true",
+        help="Record test videos: true or false (default: true)",
+    )
+    parser.addoption(
+        "--capture-screenshots",
+        action="store",
+        default="true",
+        help="Capture screenshots: true or false (default: true)",
+    )
+
+    # Additional execution options
     parser.addoption(
         "--headless",
         action="store_true",
@@ -93,16 +171,16 @@ def pytest_addoption(parser):
         help="Slow down test execution by specified milliseconds",
     )
     parser.addoption(
-        "--devices",
-        action="store",
-        default="desktop",
-        help="Comma-separated list of devices to test on",
-    )
-    parser.addoption(
         "--browsers",
         action="store",
         default="chromium",
         help="Comma-separated list of browsers to test with",
+    )
+    parser.addoption(
+        "--devices",
+        action="store",
+        default="desktop",
+        help="Comma-separated list of devices to test on",
     )
 
 
