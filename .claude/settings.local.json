@@ -5,7 +5,9 @@
       "Bash(git rev-parse:*)",
       "Bash(cat:*)",
       "Bash(rm:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(ls:*)",
+      "Bash(test:*)"
     ],
     "deny": [],
     "ask": []
