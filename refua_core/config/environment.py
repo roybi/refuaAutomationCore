@@ -67,13 +67,23 @@ class Environment:
     api_url: str
     auth_config: AuthConfig
     session_state_dir: str = "auth_states"
-    
+    auth_state_file: Optional[str] = None  # Path to auth state JSON file
+
     @property
     def session_file_path(self) -> Path:
-        """Get full path to session state file"""
+        """
+        Get full path to session state file.
+
+        Priority:
+        1. auth_state_file if explicitly set (from ENV_AUTH_STATE_FILE)
+        2. Default: {session_state_dir}/auth_state_{env}_chromium_latest.json
+        """
+        if self.auth_state_file:
+            return Path(self.auth_state_file)
+
         filename = f"auth_state_{self.name.value}_chromium_latest.json"
         return Path(self.session_state_dir) / filename
-    
+
     def can_bypass_2fa(self) -> bool:
         """Check if 2FA can be bypassed for this environment"""
         return self.auth_config.bypass_2fa and self.auth_config.auth_method == "session_state"
@@ -135,10 +145,13 @@ class EnvironmentManager:
         self._current_env = self._resolve_env_from_system()
         self._session_states_dir = self._resolve_session_dir()
         self._session_states_dir.mkdir(parents=True, exist_ok=True)
+        self._auth_state_file = self._resolve_auth_state_file()
         self._initialized = True
 
         logger.info(f"EnvironmentManager initialized: {self._current_env.value}")
         logger.debug(f"Session directory: {self._session_states_dir}")
+        if self._auth_state_file:
+            logger.debug(f"Auth state file: {self._auth_state_file}")
     
     def _resolve_env_from_system(self) -> EnvType:
         """
@@ -189,23 +202,71 @@ class EnvironmentManager:
             logger.debug(f"Using default session directory: {session_path}")
 
         return session_path
-    
+
+    def _resolve_auth_state_file(self) -> Optional[str]:
+        """
+        Resolve authentication state file path from environment variables.
+
+        Priority (for each environment):
+        1. {ENV}_AUTH_STATE_FILE env variable (e.g., TEST_AUTH_STATE_FILE)
+        2. {ENV}_AUTH_STATE_{BROWSER} for specific browser (e.g., TEST_AUTH_STATE_CHROMIUM)
+        3. None (use default session file path)
+
+        Supports:
+        - Absolute paths: C:\path\to\file.json or /path/to/file.json
+        - Home directory: ~/auth_states/file.json
+        - Environment variables: ${VAR_NAME}/file.json or $VAR_NAME/file.json
+
+        Docker-compatible:
+        - Can use /app/ paths for Docker containers
+        - Can use environment variable substitution
+        """
+        env_name = self._current_env.value.upper()
+
+        # Try environment-specific auth state file variable
+        auth_state_file = os.getenv(f"{env_name}_AUTH_STATE_FILE")
+
+        if auth_state_file:
+            # Expand environment variables and home directory
+            expanded_path = os.path.expandvars(auth_state_file)
+            expanded_path = os.path.expanduser(expanded_path)
+            logger.debug(f"Resolved auth state file: {expanded_path}")
+            return expanded_path
+
+        # Try browser-specific auth state file variable
+        browser = self.get_browser_type().upper()
+        browser_var = f"{env_name}_AUTH_STATE_{browser}"
+        auth_state_file = os.getenv(browser_var)
+
+        if auth_state_file:
+            expanded_path = os.path.expandvars(auth_state_file)
+            expanded_path = os.path.expanduser(expanded_path)
+            logger.debug(f"Resolved browser-specific auth state file: {expanded_path}")
+            return expanded_path
+
+        return None
+
     @lru_cache(maxsize=3)
     def get_environment(self, env_type: Optional[EnvType] = None) -> Environment:
         """Get environment configuration (cached)"""
         env_type = env_type or self._current_env
-        
+
         if env_type is None:
             raise EnvironmentNotSetError("Environment type is required")
-        
+
         config = _ENV_CONFIGS[env_type]
-        
+
+        # Use auth_state_file if resolved during initialization
+        # Otherwise, it will use the default session file path
+        auth_state_file = self._auth_state_file if env_type == self._current_env else None
+
         return Environment(
             name=env_type,
             base_url=config["base_url"],
             api_url=config["api_url"],
             auth_config=config["auth_config"],
-            session_state_dir=str(self._session_states_dir)
+            session_state_dir=str(self._session_states_dir),
+            auth_state_file=auth_state_file
         )
     
     @property
@@ -271,6 +332,16 @@ class EnvironmentManager:
     def get_session_file_path(self, env_type: Optional[EnvType] = None) -> Path:
         """Get path to session state file"""
         return self.get_environment(env_type).session_file_path
+
+    def get_auth_state_file(self, env_type: Optional[EnvType] = None) -> Optional[str]:
+        """
+        Get authentication state file path.
+
+        Returns:
+            - Resolved auth state file path if {ENV}_AUTH_STATE_FILE is set
+            - None otherwise (will use default session file path)
+        """
+        return self.get_environment(env_type).auth_state_file
 
     def get_session_timeout(self, env_type: Optional[EnvType] = None) -> int:
         """Get session timeout in seconds"""
