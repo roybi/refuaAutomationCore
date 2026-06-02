@@ -3,32 +3,32 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
 *.egg
+*.egg-info/
 MANIFEST
 
 # Virtual environments
 venv/
 env/
 ENV/
-env.bak/
-venv.bak/
+
+# Build / distribution
+build/
+dist/
+
+# Tests / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+test-artifacts/
+allure-results/
+allure-report/
+allure-html/
+
+# Environment / secrets
+.env
+.env.*
+*.log
 
 # IDEs
 .vscode/
@@ -36,39 +36,7 @@ venv.bak/
 *.swp
 *.swo
 *~
+
+# OS
 .DS_Store
-
-# Test artifacts
-test-artifacts/
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Allure reports
-allure-results/
-allure-report/
-allure-html/
-
-# Local development
-.env
-.env.local
-*.log
-
-# Build and package
-build/
-dist/
-*.egg-info/
-
-# Session files (external storage only)
-# Sessions should be stored in ~/.refua_sessions/ outside project
-
-# OS files
 Thumbs.db
-.DS_Store
-
-# IDE Python files
-*.pyc
-.pytest_cache/
-
-# Dependencies lock files (optional - specify versions in requirements.txt)
-# Pipfile.lock

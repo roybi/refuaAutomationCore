@@ -1,8 +1,4 @@
-"""
-Environment Configuration for MEDITEK Test Automation
-Supports: test, preprod, prod environments with 2FA session bypass
-Multi-browser support: chromium, firefox, webkit, safari
-"""
+"""Environment configuration for MEDITEK test automation."""
 
 import os
 import logging
@@ -34,7 +30,6 @@ class BrowserType(str, Enum):
 
     @classmethod
     def values(cls) -> list[str]:
-        """Get all valid browser values"""
         return [e.value for e in cls]
 
 
@@ -46,7 +41,6 @@ class EnvType(str, Enum):
 
     @classmethod
     def values(cls) -> list[str]:
-        """Get all valid environment values"""
         return [e.value for e in cls]
 
 
@@ -71,13 +65,7 @@ class Environment:
 
     @property
     def session_file_path(self) -> Path:
-        """
-        Get full path to session state file.
-
-        Priority:
-        1. auth_state_file if explicitly set (from ENV_AUTH_STATE_FILE)
-        2. Default: {session_state_dir}/auth_state_{env}_chromium_latest.json
-        """
+        """Path to session file. Uses auth_state_file override if set, otherwise default name."""
         if self.auth_state_file:
             return Path(self.auth_state_file)
 
@@ -85,7 +73,6 @@ class Environment:
         return Path(self.session_state_dir) / filename
 
     def can_bypass_2fa(self) -> bool:
-        """Check if 2FA can be bypassed for this environment"""
         return self.auth_config.bypass_2fa and self.auth_config.auth_method == "session_state"
 
 
@@ -154,10 +141,7 @@ class EnvironmentManager:
             logger.debug(f"Auth state file: {self._auth_state_file}")
     
     def _resolve_env_from_system(self) -> EnvType:
-        """
-        Resolve environment from TEST_ENV variable.
-        Raises error if not set or invalid.
-        """
+        """Resolve EnvType from TEST_ENV; raise if missing or invalid."""
         env_str = os.getenv("TEST_ENV")
 
         # Require explicit environment
@@ -180,16 +164,7 @@ class EnvironmentManager:
         return EnvType(env_str)
 
     def _resolve_session_dir(self) -> Path:
-        """
-        Resolve session storage directory from environment.
-
-        Priority:
-        1. SESSION_DIR environment variable (if set)
-        2. Default: ~/.refua_sessions/ (external, outside project)
-
-        Expands ~ to home directory. Creates directory if it doesn't exist.
-        Must be outside project directory for security and portability.
-        """
+        """Return SESSION_DIR env var path, or ~/.refua_sessions by default."""
         session_dir = os.getenv("SESSION_DIR")
 
         if session_dir:
@@ -205,21 +180,8 @@ class EnvironmentManager:
 
     def _resolve_auth_state_file(self) -> Optional[str]:
         """
-        Resolve authentication state file path from environment variables.
-
-        Priority (for each environment):
-        1. {ENV}_AUTH_STATE_FILE env variable (e.g., TEST_AUTH_STATE_FILE)
-        2. {ENV}_AUTH_STATE_{BROWSER} for specific browser (e.g., TEST_AUTH_STATE_CHROMIUM)
-        3. None (use default session file path)
-
-        Supports:
-        - Absolute paths: C:\path\to\file.json or /path/to/file.json
-        - Home directory: ~/auth_states/file.json
-        - Environment variables: ${VAR_NAME}/file.json or $VAR_NAME/file.json
-
-        Docker-compatible:
-        - Can use /app/ paths for Docker containers
-        - Can use environment variable substitution
+        Resolve session file override from env vars.
+        Priority: {ENV}_AUTH_STATE_FILE → {ENV}_AUTH_STATE_{BROWSER} → None
         """
         env_name = self._current_env.value.upper()
 
@@ -256,8 +218,6 @@ class EnvironmentManager:
 
         config = _ENV_CONFIGS[env_type]
 
-        # Use auth_state_file if resolved during initialization
-        # Otherwise, it will use the default session file path
         auth_state_file = self._auth_state_file if env_type == self._current_env else None
 
         return Environment(
@@ -305,19 +265,7 @@ class EnvironmentManager:
 
     @staticmethod
     def get_browser_type() -> str:
-        """
-        Get browser type from environment or use default.
-
-        Priority:
-        1. BROWSER environment variable (chromium, firefox, webkit, safari)
-        2. Default: chromium
-
-        Returns:
-            Browser type: chromium, firefox, webkit, or safari
-
-        Example:
-            BROWSER=firefox TEST_ENV=test pytest tests/
-        """
+        """Return BROWSER env var value, defaulting to chromium."""
         browser = os.getenv("BROWSER", "chromium").lower().strip()
 
         if browser not in BrowserType.values():
@@ -334,13 +282,6 @@ class EnvironmentManager:
         return self.get_environment(env_type).session_file_path
 
     def get_auth_state_file(self, env_type: Optional[EnvType] = None) -> Optional[str]:
-        """
-        Get authentication state file path.
-
-        Returns:
-            - Resolved auth state file path if {ENV}_AUTH_STATE_FILE is set
-            - None otherwise (will use default session file path)
-        """
         return self.get_environment(env_type).auth_state_file
 
     def get_session_timeout(self, env_type: Optional[EnvType] = None) -> int:

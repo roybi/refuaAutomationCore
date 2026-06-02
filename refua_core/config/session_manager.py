@@ -1,7 +1,4 @@
-"""
-Session State Manager for MEDITEK Test Automation
-Handles 2FA bypass by managing browser session states
-"""
+"""Session state management for 2FA bypass."""
 
 import json
 import logging
@@ -26,15 +23,7 @@ class SessionFileNotFoundError(Exception):
 
 
 class SessionStateManager:
-    """
-    Manages browser session states for 2FA bypass.
-
-    Responsibilities:
-    - Load saved session state from JSON files
-    - Apply cookies and localStorage to browser context
-    - Validate session expiration
-    - Save new session states after manual login
-    """
+    """Loads, validates, and saves browser session states for 2FA bypass."""
 
     def __init__(self):
         self._env_manager = get_env_manager()
@@ -42,19 +31,7 @@ class SessionStateManager:
         self._context_origins: dict[int, list] = {}
     
     def load_session_state(self, env_type: Optional[EnvType] = None) -> Optional[dict]:
-        """
-        Load session state from file.
-        
-        Args:
-            env_type: Environment to load session for (default: current)
-            
-        Returns:
-            Session state dict or None if bypass not allowed
-            
-        Raises:
-            SessionFileNotFoundError: If session file doesn't exist
-            SessionExpiredError: If session has expired
-        """
+        """Load and validate session state from file. Returns None if 2FA bypass is disabled."""
         env_type = env_type or self._env_manager.current_env
         
         # Check if bypass is allowed
@@ -120,22 +97,12 @@ class SessionStateManager:
             return False
     
     def apply_to_context(
-        self, 
-        context: BrowserContext, 
+        self,
+        context: BrowserContext,
         env_type: Optional[EnvType] = None,
         raise_on_error: bool = False
     ) -> bool:
-        """
-        Apply saved session state to browser context.
-        
-        Args:
-            context: Playwright browser context
-            env_type: Environment (default: current)
-            raise_on_error: If True, raise exceptions instead of returning False
-            
-        Returns:
-            True if session applied successfully
-        """
+        """Apply saved session cookies to a browser context. Returns True on success."""
         env_type = env_type or self._env_manager.current_env
         
         try:
@@ -181,16 +148,7 @@ class SessionStateManager:
         return valid
     
     def apply_local_storage(self, page: Page) -> bool:
-        """
-        Apply localStorage to page after navigation.
-        Must be called AFTER page.goto() since localStorage is origin-specific.
-        
-        Args:
-            page: Playwright page object
-            
-        Returns:
-            True if applied successfully
-        """
+        """Apply localStorage for the page's origin. Must be called after page.goto()."""
         context = page.context
         origins_data = self._context_origins.get(id(context))
 
@@ -236,28 +194,13 @@ class SessionStateManager:
         return False
     
     def save_session_state(
-        self, 
-        context: BrowserContext, 
+        self,
+        context: BrowserContext,
         page: Page,
         env_type: Optional[EnvType] = None,
         expires_in_days: int = 3
     ) -> Path:
-        """
-        Save current browser session to file.
-        Use after manual login to capture session for future 2FA bypass.
-        
-        Args:
-            context: Browser context with authenticated session
-            page: Current page (must be on authenticated page)
-            env_type: Environment (default: current)
-            expires_in_days: Session validity period
-            
-        Returns:
-            Path to saved session file
-            
-        Raises:
-            ValueError: If page is not authenticated
-        """
+        """Capture the current authenticated session to disk. Raises ValueError if not authenticated."""
         if not context:
             raise ValueError("Browser context is required")
         
@@ -322,15 +265,7 @@ class SessionStateManager:
         return tokens
     
     def is_authenticated(self, page: Page) -> bool:
-        """
-        Check if current page shows authenticated state.
-        
-        Args:
-            page: Playwright page
-            
-        Returns:
-            True if user appears logged in
-        """
+        """Return True if the page appears to show an authenticated session."""
         if not page:
             return False
         
@@ -373,12 +308,7 @@ class SessionStateManager:
             return False
     
     def get_session_info(self, env_type: Optional[EnvType] = None) -> Optional[dict]:
-        """
-        Get session metadata without loading full state.
-        
-        Returns:
-            Session metadata dict or None
-        """
+        """Return session metadata dict, or None if the file doesn't exist."""
         env_type = env_type or self._env_manager.current_env
         session_path = self._env_manager.get_session_file_path(env_type)
         
