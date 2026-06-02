@@ -28,41 +28,17 @@ class BasePage:
     """
 
     def __init__(self, page: Page):
-        """Initialize page object with Playwright page instance.
-
-        Args:
-            page: Playwright Page object from browser context
-        """
         self.page = page
+        self._env_mgr = get_env_manager()
 
     def goto(self, path: str, **kwargs):
-        """Navigate to path on current environment.
-
-        Automatically prepends the base URL for the current TEST_ENV.
-
-        Args:
-            path: Path relative to base URL (e.g., "/login", "/dashboard")
-            **kwargs: Additional arguments passed to page.goto()
-
-        Example:
-            page.goto("/login")  # Navigates to https://app.test.env/login
-        """
-        env_mgr = get_env_manager()
-        full_url = f"{env_mgr.get_base_url()}{path}"
+        """Navigate to path on current environment."""
+        full_url = f"{self._env_mgr.get_base_url()}{path}"
         self.page.goto(full_url, **kwargs)
 
     def wait_for_url(self, path: str, timeout: int = 30000):
-        """Wait for URL navigation to complete.
-
-        Args:
-            path: Expected path relative to base URL
-            timeout: Maximum time to wait in milliseconds (default: 30000)
-
-        Example:
-            page.wait_for_url("/dashboard")  # Waits for dashboard URL
-        """
-        env_mgr = get_env_manager()
-        full_url = f"{env_mgr.get_base_url()}{path}"
+        """Wait for URL navigation to complete."""
+        full_url = f"{self._env_mgr.get_base_url()}{path}"
         self.page.wait_for_url(full_url, timeout=timeout)
 
     def is_visible(self, selector: str) -> bool:

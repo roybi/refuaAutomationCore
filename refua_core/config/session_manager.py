@@ -6,7 +6,7 @@ Handles 2FA bypass by managing browser session states
 import json
 import logging
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from playwright.sync_api import Page, BrowserContext
 
@@ -28,16 +28,18 @@ class SessionFileNotFoundError(Exception):
 class SessionStateManager:
     """
     Manages browser session states for 2FA bypass.
-    
+
     Responsibilities:
     - Load saved session state from JSON files
     - Apply cookies and localStorage to browser context
     - Validate session expiration
     - Save new session states after manual login
     """
-    
+
     def __init__(self):
         self._env_manager = get_env_manager()
+        # Maps BrowserContext id → origins data, avoiding monkey-patching Playwright objects
+        self._context_origins: dict[int, list] = {}
     
     def load_session_state(self, env_type: Optional[EnvType] = None) -> Optional[dict]:
         """
@@ -100,8 +102,11 @@ class SessionStateManager:
         try:
             expires_str = expires_str.replace('Z', '+00:00')
             expires_at = datetime.fromisoformat(expires_str)
-            now = datetime.now(expires_at.tzinfo)
-            
+            if expires_at.tzinfo is None:
+                # Legacy sessions saved without timezone — treat as UTC
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+
             is_valid = now < expires_at
             
             if is_valid:
@@ -149,10 +154,9 @@ class SessionStateManager:
                 context.add_cookies(valid_cookies)
                 logger.info(f"Applied {len(valid_cookies)} cookies")
             
-            # Store origins data for page-level application
-            context._origins_data = storage_state.get("origins", [])
-            context._session_applied = True
-            
+            # Store origins data keyed by context id (avoids monkey-patching Playwright objects)
+            self._context_origins[id(context)] = storage_state.get("origins", [])
+
             return True
             
         except (SessionFileNotFoundError, SessionExpiredError, ValueError) as e:
@@ -188,13 +192,8 @@ class SessionStateManager:
             True if applied successfully
         """
         context = page.context
-        
-        # Check if session was applied to context
-        if not getattr(context, '_session_applied', False):
-            logger.debug("No session applied to context")
-            return False
-        
-        origins_data = getattr(context, '_origins_data', None)
+        origins_data = self._context_origins.get(id(context))
+
         if not origins_data:
             logger.debug("No origins data available")
             return False
@@ -279,8 +278,8 @@ class SessionStateManager:
         # Get Playwright's storage state
         storage_state = context.storage_state()
         
-        # Build session data
-        now = datetime.now()
+        # Build session data — always store as UTC so validation comparisons are unambiguous
+        now = datetime.now(timezone.utc)
         session_data = {
             "storage_state": storage_state,
             "metadata": {

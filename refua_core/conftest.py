@@ -49,26 +49,38 @@ def pytest_configure(config):
     # Convert pytest options to environment variables
     # This allows parameters to be passed at the END of the pytest command
 
-    if config.getoption("--test-env"):
-        os.environ["TEST_ENV"] = config.getoption("--test-env")
+    # Only override env vars when the option was explicitly supplied by the user.
+    # Checking against None (not the option default) avoids clobbering values the
+    # caller already exported (e.g. BROWSER=firefox pytest).
+    test_env = config.getoption("--test-env", default=None)
+    if test_env is not None:
+        os.environ["TEST_ENV"] = test_env
 
-    if config.getoption("--browser"):
-        os.environ["BROWSER"] = config.getoption("--browser")
+    # --browser default is "chromium"; only override when value differs from default,
+    # which signals the user explicitly passed it.
+    browser = config.getoption("--browser", default=None)
+    if browser is not None and browser != "chromium":
+        os.environ["BROWSER"] = browser
 
-    if config.getoption("--device"):
-        os.environ["DEVICE"] = config.getoption("--device")
+    device = config.getoption("--device", default=None)
+    if device is not None and device != "desktop":
+        os.environ["DEVICE"] = device
 
-    if config.getoption("--skip-2fa"):
-        os.environ["SKIP_2FA"] = config.getoption("--skip-2fa")
+    skip_2fa = config.getoption("--skip-2fa", default=None)
+    if skip_2fa is not None:
+        os.environ["SKIP_2FA"] = skip_2fa
 
-    if config.getoption("--session-dir"):
-        os.environ["SESSION_DIR"] = config.getoption("--session-dir")
+    session_dir = config.getoption("--session-dir", default=None)
+    if session_dir is not None:
+        os.environ["SESSION_DIR"] = session_dir
 
-    if config.getoption("--record-video"):
-        os.environ["RECORD_VIDEO"] = config.getoption("--record-video")
+    record_video = config.getoption("--record-video", default=None)
+    if record_video is not None and record_video != "true":
+        os.environ["RECORD_VIDEO"] = record_video
 
-    if config.getoption("--capture-screenshots"):
-        os.environ["CAPTURE_SCREENSHOTS"] = config.getoption("--capture-screenshots")
+    capture_screenshots = config.getoption("--capture-screenshots", default=None)
+    if capture_screenshots is not None and capture_screenshots != "true":
+        os.environ["CAPTURE_SCREENSHOTS"] = capture_screenshots
 
     # Validate environment before tests start
     try:
@@ -254,200 +266,3 @@ def pytest_runtest_logreport(report):
             logger.error(f"✗ FAILED: {report.nodeid}")
     elif report.when == "teardown":
         logger.debug(f"Cleaning up: {report.nodeid}")
-
-
-# ============================================================================
-# COMMAND-LINE USAGE EXAMPLES
-# ============================================================================
-"""
-The pytest command must have:
-1. Environment variables FIRST
-2. pytest and its options LAST
-
-✅ CORRECT USAGE:
-    TEST_ENV=test BROWSER=chromium DEVICE=desktop pytest tests/ -v --tb=short
-
-    TEST_ENV=test \\
-    BROWSER=firefox \\
-    DEVICE=iphone \\
-    SKIP_2FA=true \\
-    RECORD_VIDEO=true \\
-    pytest tests/test_auth.py -v --alluredir=./allure-results
-
-✅ WITH PYTEST OPTIONS AT END:
-    TEST_ENV=test pytest tests/ -v -k "login" --tb=short
-    TEST_ENV=test pytest -n auto tests/ --dist=loadscope
-    TEST_ENV=test pytest tests/ --alluredir=./allure-results
-
-✅ WITH CUSTOM PYTEST OPTIONS:
-    TEST_ENV=test pytest tests/ --headless --slow-motion=100
-    TEST_ENV=test pytest tests/ --browsers=firefox,webkit --devices=iphone,android
-
-❌ INCORRECT USAGE (environment variables after pytest):
-    pytest tests/ TEST_ENV=test BROWSER=chromium  # WRONG!
-    pytest TEST_ENV=test tests/  # WRONG!
-
-================================================================
-ENVIRONMENT VARIABLE DESCRIPTION
-================================================================
-
-TEST_ENV (REQUIRED)
-    Purpose: Specify target environment
-    Values: test, preprod, prod
-    Default: None (must be set)
-    Example: TEST_ENV=test
-
-BROWSER (OPTIONAL)
-    Purpose: Select browser engine
-    Values: chromium, firefox, webkit, safari
-    Default: chromium
-    Example: BROWSER=firefox TEST_ENV=test pytest
-
-DEVICE (OPTIONAL)
-    Purpose: Select device profile for emulation
-    Values: desktop, iphone, iphone_14, android, android_pixel, etc.
-    Default: desktop
-    Example: DEVICE=iphone TEST_ENV=test pytest
-
-SKIP_2FA (OPTIONAL)
-    Purpose: Bypass 2FA using saved session
-    Values: true, false
-    Default: true for test/preprod, false for prod
-    Example: SKIP_2FA=true TEST_ENV=test pytest
-
-SESSION_DIR (OPTIONAL)
-    Purpose: External session storage directory
-    Values: File path (absolute or ~)
-    Default: ~/.refua_sessions/
-    Example: SESSION_DIR=/sessions TEST_ENV=test pytest
-
-RECORD_VIDEO (OPTIONAL)
-    Purpose: Enable/disable test video recording
-    Values: true, false
-    Default: true
-    Example: RECORD_VIDEO=true TEST_ENV=test pytest
-
-CAPTURE_SCREENSHOTS (OPTIONAL)
-    Purpose: Enable/disable test screenshot capture
-    Values: true, false
-    Default: true
-    Example: CAPTURE_SCREENSHOTS=true TEST_ENV=test pytest
-
-================================================================
-PYTEST OPTIONS (AT END OF COMMAND)
-================================================================
-
--v, --verbose
-    Verbose output
-    Example: TEST_ENV=test pytest -v
-
--q, --quiet
-    Quiet output
-    Example: TEST_ENV=test pytest -q
-
--s
-    Don't capture output (show print statements)
-    Example: TEST_ENV=test pytest -s
-
--k EXPRESSION
-    Run tests matching expression
-    Example: TEST_ENV=test pytest -k "login"
-
--m MARKER
-    Run tests with specific marker
-    Example: TEST_ENV=test pytest -m smoke
-
---tb=short
-    Short traceback format
-    Example: TEST_ENV=test pytest --tb=short
-
--x
-    Stop on first failure
-    Example: TEST_ENV=test pytest -x
-
--n auto
-    Run tests in parallel (requires pytest-xdist)
-    Example: TEST_ENV=test pytest -n auto
-
---dist=loadscope
-    Parallel distribution strategy
-    Example: TEST_ENV=test pytest -n auto --dist=loadscope
-
---alluredir=PATH
-    Generate Allure results directory
-    Example: TEST_ENV=test pytest --alluredir=./allure-results
-
---headless
-    Run in headless mode (custom option)
-    Example: TEST_ENV=test pytest --headless
-
-================================================================
-COMMON TEST EXECUTION PATTERNS
-================================================================
-
-1. BASIC TEST RUN (Single environment, single browser):
-    TEST_ENV=test pytest tests/
-
-2. WITH VERBOSE OUTPUT:
-    TEST_ENV=test pytest -v tests/
-
-3. WITH SPECIFIC TEST FILE:
-    TEST_ENV=test pytest tests/test_auth.py
-
-4. WITH SPECIFIC TEST FUNCTION:
-    TEST_ENV=test pytest tests/test_auth.py::test_login_success
-
-5. WITH TEST MARKERS:
-    TEST_ENV=test pytest -m smoke tests/
-
-6. WITH TEST NAME FILTER:
-    TEST_ENV=test pytest -k "login" tests/
-
-7. MOBILE DEVICE TESTING:
-    TEST_ENV=test DEVICE=iphone pytest tests/
-    TEST_ENV=test DEVICE=android pytest tests/
-
-8. BROWSER-SPECIFIC TESTING:
-    BROWSER=firefox TEST_ENV=test pytest tests/
-    BROWSER=webkit TEST_ENV=test pytest tests/
-
-9. PARALLEL EXECUTION:
-    TEST_ENV=test pytest -n auto tests/
-    TEST_ENV=test pytest -n 4 --dist=loadscope tests/
-
-10. WITH ALLURE REPORTING:
-    TEST_ENV=test pytest --alluredir=./allure-results tests/
-    allure serve ./allure-results
-
-11. FULL MULTI-ENVIRONMENT EXECUTION:
-    TEST_ENV=test BROWSER=chromium DEVICE=desktop \\
-        RECORD_VIDEO=true CAPTURE_SCREENSHOTS=true \\
-        pytest -n auto --alluredir=./allure-results -v
-
-12. PRODUCTION ENVIRONMENT (No 2FA bypass):
-    TEST_ENV=prod SKIP_2FA=false pytest tests/
-
-13. PREPROD ENVIRONMENT (2FA bypass enabled):
-    TEST_ENV=preprod SKIP_2FA=true pytest tests/
-
-14. CUSTOM SESSION DIRECTORY (Docker):
-    TEST_ENV=test SESSION_DIR=/sessions pytest tests/
-
-15. HEADLESS MODE (Custom option):
-    TEST_ENV=test pytest --headless tests/
-
-================================================================
-DEBUGGING TEST EXECUTION
-================================================================
-
-Enable debug logging to see all parameter handling:
-    TEST_ENV=test pytest tests/ -v -s --log-cli-level=DEBUG
-
-Check session file validation:
-    TEST_ENV=test pytest tests/test_auth.py -v -s --tb=short
-
-View all executed commands:
-    TEST_ENV=test pytest tests/ -v --capture=no
-
-================================================================
-"""

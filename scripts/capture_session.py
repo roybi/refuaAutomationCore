@@ -124,32 +124,24 @@ def validate_arguments(args):
 
 def setup_environment_manager(env: str, session_dir: str = None):
     """
-    Setup EnvironmentManager for specified environment
+    Setup EnvironmentManager for the specified environment.
 
-    Args:
-        env: Environment (test, preprod, prod)
-        session_dir: Optional custom session directory
-
-    Returns:
-        EnvironmentManager instance configured for environment
-
-    Note:
-        This temporarily overrides TEST_ENV to the specified environment.
-        The SESSION_DIR override is set if custom path provided.
+    Resets the singleton so a fresh instance is created with the new env
+    and session_dir values.  Required when capture_session is called for
+    multiple environments in the same process.
     """
-    # Temporarily set TEST_ENV to the specified environment
     import os
     os.environ['TEST_ENV'] = env
 
-    # If custom session dir provided, set SESSION_DIR
     if session_dir:
         session_path = Path(session_dir).expanduser().resolve()
         os.environ['SESSION_DIR'] = str(session_path)
         logger.debug(f"Using custom session directory: {session_path}")
     else:
-        logger.debug(f"Using default session directory: ~/.refua_sessions/")
+        logger.debug("Using default session directory: ~/.refua_sessions/")
 
-    # Create EnvironmentManager - will use TEST_ENV
+    # Reset singleton so __init__ re-reads the updated env vars
+    EnvironmentManager.reset_instance()
     return EnvironmentManager()
 
 
@@ -328,7 +320,7 @@ def capture_sessions_for_all_browsers(
     user: str,
     device: str = "desktop",
     session_dir: str = None
-) -> dict:
+) -> tuple[dict, list]:
     """
     Capture sessions for all supported browsers
 
@@ -356,8 +348,6 @@ def capture_sessions_for_all_browsers(
         except Exception as e:
             logger.error(f"Failed to capture {browser} session: {e}")
             failed_browsers.append(browser)
-            # Continue with next browser instead of failing
-            input(f"\nPress Enter to continue with next browser (or Ctrl+C to exit)...")
 
     return results, failed_browsers
 

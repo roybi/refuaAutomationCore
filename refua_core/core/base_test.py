@@ -50,12 +50,9 @@ from typing import Optional
 import pytest
 from playwright.sync_api import Browser, BrowserContext, Page, sync_playwright
 
-from refua_core.config.environment import get_env_manager, validate_environment
+from refua_core.config.environment import get_env_manager, validate_environment, EnvironmentManager
 
 logger = logging.getLogger(__name__)
-
-# Supported browser types
-SUPPORTED_BROWSERS = ["chromium", "firefox", "webkit", "safari"]
 
 
 class BaseTest:
@@ -152,26 +149,8 @@ class BaseTest:
 
     @staticmethod
     def get_browser_type() -> str:
-        """
-        Get browser type from environment or use default.
-
-        Priority:
-        1. BROWSER environment variable
-        2. Default: chromium
-
-        Returns:
-            Browser type: chromium, firefox, webkit, or safari
-        """
-        browser = os.getenv("BROWSER", "chromium").lower().strip()
-
-        if browser not in SUPPORTED_BROWSERS:
-            logger.warning(
-                f"Unsupported browser: {browser}. "
-                f"Supported: {SUPPORTED_BROWSERS}. Using chromium."
-            )
-            return "chromium"
-
-        return browser
+        """Get browser type from BROWSER env var (delegates to EnvironmentManager)."""
+        return EnvironmentManager.get_browser_type()
 
     @staticmethod
     def log_execution_parameters():
