@@ -24,7 +24,6 @@ from playwright.sync_api import sync_playwright
 from refua_core.config.environment import (
     EnvironmentManager,
     InvalidEnvironmentError,
-    EnvironmentNotSetError,
 )
 from refua_core.config.session_manager import SessionStateManager
 
