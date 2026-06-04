@@ -31,10 +31,11 @@ refuaAutomationCore/  (This repo - the core framework package)
 │   │   ├── device_config.py
 │   │   └── devices.json
 │   ├── core/                # Core testing infrastructure
-│   │   ├── base_test.py
 │   │   ├── device_manager.py
 │   │   ├── visual_regression.py
 │   │   └── artifact_manager.py
+│   ├── pages/               # Page Object Model base classes
+│   │   └── base_page.py     # BasePage — base for both page objects and test classes
 │   └── __init__.py
 ├── scripts/                  # Utility scripts (for framework users)
 │   └── capture_session.py   # Session capture script
@@ -96,14 +97,22 @@ Configuration and session management components:
   - Desktop profile
   - Device-specific viewport, UA, touch settings
 
+### `refua_core/pages/`
+
+Page Object Model base classes:
+
+- **`base_page.py`**: Single base class for all page objects and test classes
+  - Browser lifecycle management (pytest `setup_browser` fixture)
+  - Navigation helpers: `goto()`, `wait_for_url()`
+  - Element helpers: `is_visible()`, `get_text()`
+  - Artifact helpers: `take_screenshot()`
+  - Environment helpers: `is_production()`, `can_bypass_2fa()`, `get_session_dir()`
+  - **As page object base**: `class LoginPage(BasePage)` — pass `page` to `super().__init__(page)`
+  - **As test base**: `class TestLogin(BasePage)` — fixture sets `self.page` automatically
+
 ### `refua_core/core/`
 
 Core testing infrastructure components:
-
-- **`base_test.py`**: Base test class for Playwright-based tests
-  - Session validation hooks
-  - Browser initialization/teardown
-  - Common test utilities
 
 - **`device_manager.py`**: Mobile device emulation management
   - Device profile loading from `devices.json`
@@ -857,7 +866,7 @@ BROWSER=chromium TEST_ENV=test DEVICE=android SKIP_2FA=true pytest -n auto --all
 **How Session Loading Works:**
 
 1. Tests request browser and device combination (e.g., firefox + desktop)
-2. BaseTest fixture loads session from: `~/.refua_sessions/auth_state_test_firefox_latest.json`
+2. BasePage `setup_browser` fixture loads session from: `~/.refua_sessions/auth_state_test_firefox_latest.json`
 3. Session applied to browser context (cookies, localStorage)
 4. Tests run with 2FA already bypassed (no user interaction needed)
 5. Test completes with authenticated session
@@ -1209,11 +1218,11 @@ with sync_playwright() as p:
 
 ```python
 import pytest
-from refua_core.core.base_test import BaseTest
+from refua_core.pages.base_page import BasePage
 from tests.pages.login_page import LoginPage
 from tests.pages.dashboard_page import DashboardPage
 
-class TestUserWorkflow(BaseTest):
+class TestUserWorkflow(BasePage):
     """Test user workflow using page objects"""
 
     def test_login_and_navigate(self):
@@ -1229,7 +1238,7 @@ class TestUserWorkflow(BaseTest):
         # Verify user menu visible
         assert dashboard_page.user_menu.is_visible()
 
-class TestMobileWorkflow(BaseTest):
+class TestMobileWorkflow(BasePage):
     """Test mobile-specific interactions"""
 
     @pytest.mark.mobile
@@ -1304,11 +1313,11 @@ class DashboardPage:
 
 ```python
 import pytest
-from refua_core.core.base_test import BaseTest
+from refua_core.pages.base_page import BasePage
 from refua_core.core.visual_regression import VisualRegressionManager
 from tests.pages.login_page import LoginPage
 
-class TestVisualRegression(BaseTest):
+class TestVisualRegression(BasePage):
     """Test page visual appearance against Figma designs"""
 
     def test_login_page_visual_regression(self, visual_regression: VisualRegressionManager):
@@ -1361,7 +1370,7 @@ def auto_visual_check(page, visual_regression: VisualRegressionManager):
     page.goto = goto_with_check
     return visual_regression
 
-class TestAutoVisualRegression(BaseTest):
+class TestAutoVisualRegression(BasePage):
     """Tests with automatic visual regression checking"""
 
     def test_login_flow_with_auto_check(self, auto_visual_check):
@@ -1613,9 +1622,9 @@ def pytest_runtest_makereport(item, call):
 
 ```python
 import pytest
-from refua_core.core.base_test import BaseTest
+from refua_core.pages.base_page import BasePage
 
-class TestWithArtifacts(BaseTest):
+class TestWithArtifacts(BasePage):
     """Tests with automatic video/screenshot capture"""
 
     def test_login_flow_with_artifacts(self, browser_context):
@@ -1709,7 +1718,7 @@ Sessions are stored by device:
 ### Adding a New Test
 
 1. Create test file in `tests/test_*.py` (follows pytest naming)
-2. Inherit from `BaseTest` or write as pytest function
+2. Inherit from `BasePage` or write as pytest function
 3. Use page objects for all UI interactions
 4. Mark test with appropriate markers: `@pytest.mark.smoke`, `@pytest.mark.regression`, etc.
 5. Session validation happens automatically before test
@@ -1899,12 +1908,12 @@ EOF
 # 4. Create test with visual regression
 cat > tests/test_new_feature_visual.py << 'EOF'
 import pytest
-from refua_core.core.base_test import BaseTest
+from refua_core.pages.base_page import BasePage
 from refua_core.core.visual_regression import VisualRegressionManager
 from tests.pages.new_feature_page import NewFeaturePage
 
 @pytest.mark.visual_regression
-class TestNewFeatureVisual(BaseTest):
+class TestNewFeatureVisual(BasePage):
     def test_page_matches_figma_design(self, visual_regression: VisualRegressionManager):
         """Test new feature page matches Figma design"""
         page_obj = NewFeaturePage(self.page)
@@ -2920,18 +2929,20 @@ This section outlines all components and features needed for the refuaAutomation
 - **Estimated Effort:** 3-4 hours
 - **Why First:** All other components depend on environment configuration
 
-### P1.2 - BaseTest Class & Pytest Setup
+### P1.2 - BasePage Class & Pytest Setup
 
 **Priority:** 🔴 CRITICAL (Build Second)
 **Status:** Planning
 **Dependencies:** P1.1 (EnvironmentManager)
-**Description:** Foundation for all test classes
+**Description:** Foundation for all page objects and test classes (consolidated in one file per POM)
 
-- [ ] `refua_core/core/base_test.py`
-  - [ ] BaseTest class extending pytest.TestCase
-  - [ ] Browser initialization/teardown
-  - [ ] Session setup hooks
-  - [ ] Common fixtures and utilities
+- [ ] `refua_core/pages/base_page.py`
+  - [ ] BasePage class — dual-purpose base for page objects and test classes
+  - [ ] `setup_browser` pytest fixture (browser init/teardown, session loading)
+  - [ ] Navigation helpers: `goto()`, `wait_for_url()`
+  - [ ] Element helpers: `is_visible()`, `get_text()`
+  - [ ] Artifact helpers: `take_screenshot()`
+  - [ ] Environment helpers: `is_production()`, `can_bypass_2fa()`, `get_session_dir()`
 - [ ] `tests/conftest.py`
   - [ ] Pytest fixtures (page, browser, context)
   - [ ] Test hooks for setup/teardown
@@ -2976,20 +2987,16 @@ This section outlines all components and features needed for the refuaAutomation
 ### P2.1 - Page Object Model (POM) Base Classes
 
 **Priority:** 🟠 HIGH (Build Fourth)
-**Status:** Planning
-**Dependencies:** P1.2 (BaseTest)
-**Description:** Page object pattern foundation
+**Status:** ✅ Done (consolidated into `refua_core/pages/base_page.py`)
+**Dependencies:** P1.2 (BasePage)
+**Description:** Page object pattern — base class now shared with test infrastructure
 
-- [ ] `refua_core/pages/base_page.py`
-  - [ ] BasePage class
-  - [ ] `goto()` method with environment awareness
-  - [ ] `wait_for_url()` method
-  - [ ] Common element interaction methods
+- [x] `refua_core/pages/base_page.py` — see P1.2; BasePage covers both roles
 - [ ] Example page objects
   - [ ] `tests/pages/login_page.py`
   - [ ] `tests/pages/dashboard_page.py`
 - [ ] Page object patterns documentation
-- **Estimated Effort:** 3-4 hours
+- **Estimated Effort:** 1-2 hours (base done; only concrete page objects remain)
 - **Why Fourth:** Enables writing first meaningful tests
 
 ### P2.2 - Device Configuration & DeviceManager
@@ -3017,7 +3024,7 @@ This section outlines all components and features needed for the refuaAutomation
 
 **Priority:** 🟠 HIGH (Build Sixth)
 **Status:** Planning
-**Dependencies:** P1.2 (BaseTest)
+**Dependencies:** P1.2 (BasePage)
 **Description:** Automatic artifact capture and conditional retention
 
 - [ ] `refua_core/core/artifact_manager.py`
@@ -3328,7 +3335,7 @@ This section outlines all components and features needed for the refuaAutomation
 | Phase | Component             | Priority    | Effort | Dependencies     |
 | ----- | --------------------- | ----------- | ------ | ---------------- |
 | **1** | EnvironmentManager    | 🔴 CRITICAL | 3-4h   | None             |
-| **1** | BaseTest & Pytest     | 🔴 CRITICAL | 4-5h   | P1.1             |
+| **1** | BasePage & Pytest     | 🔴 CRITICAL | 4-5h   | P1.1             |
 | **1** | SessionStateManager   | 🔴 CRITICAL | 5-6h   | P1.1             |
 | **2** | Page Object Models    | 🟠 HIGH     | 3-4h   | P1.2             |
 | **2** | DeviceManager         | 🟠 HIGH     | 3-4h   | P1.1             |
