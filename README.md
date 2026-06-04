@@ -15,17 +15,15 @@ This repository contains **only the core framework** — reusable infrastructure
 | `environment.py` | `EnvironmentManager` singleton — base URLs, API endpoints, credential loading per environment |
 | `session_manager.py` | 2FA bypass — session file validation, cookie/localStorage injection, 3-day TTL |
 
-### `refua_core/core/`
-
-| File | Purpose |
-|------|---------|
-| `base_test.py` | `BaseTest` — browser lifecycle, session loading, common navigation helpers |
-
 ### `refua_core/pages/`
 
 | File | Purpose |
 |------|---------|
-| `base_page.py` | `BasePage` — environment-aware `goto()` / `wait_for_url()` for Page Object Model |
+| `base_page.py` | `BasePage` — single base for both page objects and test classes; includes browser lifecycle fixture, environment-aware `goto()` / `wait_for_url()`, element helpers, and screenshot capture |
+
+### `refua_core/core/`
+
+Supporting infrastructure (no test base class — that lives in `pages/base_page.py`):
 
 ### `refua_core/conftest.py`
 
@@ -122,7 +120,7 @@ class LoginPage(BasePage):
         self.password.fill(password)
         self.submit.click()
 
-class TestAuth(BaseTest):
+class TestAuth(BasePage):
     def test_login(self):
         login = LoginPage(self.page)
         login.goto("/login")
@@ -158,10 +156,9 @@ refuaAutomationCore/
 │   ├── config/
 │   │   ├── environment.py       # EnvironmentManager singleton
 │   │   └── session_manager.py   # SessionStateManager (2FA bypass)
-│   ├── core/
-│   │   └── base_test.py         # BaseTest class
 │   ├── pages/
-│   │   └── base_page.py         # BasePage class
+│   │   └── base_page.py         # BasePage — base for page objects and test classes
+│   ├── core/
 │   ├── conftest.py              # Pytest plugin (CLI options + env validation)
 │   └── version.py
 ├── scripts/
