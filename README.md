@@ -109,7 +109,6 @@ allure serve ./allure-results
 ```python
 from playwright.sync_api import Page
 from refua_core.pages.base_page import BasePage
-from refua_core.core.base_test import BaseTest
 
 class LoginPage(BasePage):
     def __init__(self, page: Page):
