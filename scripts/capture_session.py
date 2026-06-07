@@ -53,6 +53,20 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_BROWSERS = ["chromium", "firefox", "webkit", "safari"]
 
+# Maps CLI device names to Playwright built-in descriptor names.
+# Playwright's p.devices[name] provides viewport, UA, scale factor, isMobile, hasTouch.
+_DEVICE_MAP = {
+    "desktop":       None,
+    "iphone":        "iPhone 14 Pro",
+    "iphone_14_pro": "iPhone 14 Pro",
+    "iphone_14":     "iPhone 14",
+    "iphone_13":     "iPhone 13",
+    "iphone_12":     "iPhone 12",
+    "android":       "Pixel 7",
+    "android_pixel": "Pixel 7",
+    "android_galaxy": "Galaxy S9+",
+}
+
 
 def _setup_env_manager(env: str, app: str = "meditek", session_dir: str = None) -> EnvironmentManager:
     """Reset and reinitialise the EnvironmentManager singleton for the given app+env."""
@@ -96,8 +110,9 @@ def capture_session_for_browser(
     base_url = env_mgr.get_base_url()
     env_mgr.get_session_dir().mkdir(parents=True, exist_ok=True)
 
+    display_device = _DEVICE_MAP.get(device.lower(), device) or "Desktop"
     print(f"\n{Fore.CYAN}{'='*70}")
-    print(f"{Fore.CYAN}BROWSER: {browser.upper()} | APP: {app} | ENV: {env.upper()} | DEVICE: {device}")
+    print(f"{Fore.CYAN}BROWSER: {browser.upper()} | APP: {app} | ENV: {env.upper()} | DEVICE: {display_device}")
     print(f"{Fore.CYAN}{'='*70}\n")
 
     with sync_playwright() as p:
@@ -117,7 +132,15 @@ def capture_session_for_browser(
         }
 
         browser_instance = browser_launcher.launch(**launch_kwargs)
+
+        # Resolve device emulation config from Playwright's built-in descriptors
+        playwright_device_name = _DEVICE_MAP.get(device.lower() if device else "desktop")
+        device_kwargs = dict(p.devices[playwright_device_name]) if playwright_device_name else {}
+        if playwright_device_name:
+            logger.info("Device emulation: %s", playwright_device_name)
+
         context = browser_instance.new_context(
+            **device_kwargs,
             locale="he-IL",
             timezone_id="Asia/Jerusalem",
         )
@@ -258,7 +281,7 @@ def main():
                         choices=SUPPORTED_BROWSERS + ["all"],
                         help="Browser to capture (default: all)")
     parser.add_argument("--device", default="desktop",
-                        choices=["desktop", "iphone", "android"],
+                        choices=list(_DEVICE_MAP.keys()),
                         help="Device profile (default: desktop)")
     parser.add_argument("--session-dir", default=None,
                         help="Session storage directory (default: ~/.refua_sessions)")

@@ -1,0 +1,53 @@
+{
+  "desktop": {
+    "playwright_name": null,
+    "viewport": { "width": 1920, "height": 1080 },
+    "deviceScaleFactor": 1,
+    "isMobile": false,
+    "hasTouch": false
+  },
+  "iphone_14_pro": {
+    "playwright_name": "iPhone 14 Pro",
+    "viewport": { "width": 393, "height": 852 },
+    "deviceScaleFactor": 3,
+    "isMobile": true,
+    "hasTouch": true
+  },
+  "iphone_14": {
+    "playwright_name": "iPhone 14",
+    "viewport": { "width": 390, "height": 844 },
+    "deviceScaleFactor": 3,
+    "isMobile": true,
+    "hasTouch": true
+  },
+  "iphone_13": {
+    "playwright_name": "iPhone 13",
+    "viewport": { "width": 390, "height": 844 },
+    "deviceScaleFactor": 3,
+    "isMobile": true,
+    "hasTouch": true
+  },
+  "iphone_12": {
+    "playwright_name": "iPhone 12",
+    "viewport": { "width": 390, "height": 844 },
+    "deviceScaleFactor": 3,
+    "isMobile": true,
+    "hasTouch": true
+  },
+  "iphone": { "extends": "iphone_14_pro" },
+  "android_pixel": {
+    "playwright_name": "Pixel 7",
+    "viewport": { "width": 412, "height": 915 },
+    "deviceScaleFactor": 2.625,
+    "isMobile": true,
+    "hasTouch": true
+  },
+  "android_galaxy": {
+    "playwright_name": "Galaxy S9+",
+    "viewport": { "width": 320, "height": 658 },
+    "deviceScaleFactor": 4.5,
+    "isMobile": true,
+    "hasTouch": true
+  },
+  "android": { "extends": "android_pixel" }
+}
