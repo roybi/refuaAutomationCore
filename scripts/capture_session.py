@@ -39,7 +39,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
-        logging.FileHandler("auth_capture.log"),
+        logging.FileHandler("auth_capture.log", encoding="utf-8"),
         logging.StreamHandler(),
     ],
 )
