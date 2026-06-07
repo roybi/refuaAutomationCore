@@ -7,10 +7,10 @@ One file is created per app+environment+browser combination:
   auth_state_{app}_{env}_{browser}_latest.json
 
 Usage:
-    python scripts/capture_session.py --env test --user john.doe
-    python scripts/capture_session.py --env test --user john.doe --app cpr-go
-    python scripts/capture_session.py --env test --user john.doe --browser firefox
-    python scripts/capture_session.py --env test --user john.doe --session-dir /sessions
+    python scripts/capture_session.py --env test
+    python scripts/capture_session.py --env test --app cpr-go
+    python scripts/capture_session.py --env test --browser firefox
+    python scripts/capture_session.py --env test --session-dir /sessions
 """
 
 import argparse
