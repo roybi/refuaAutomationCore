@@ -213,8 +213,8 @@ def main():
                         help=f"Application to capture session for (default: meditek). Known: {known_apps}")
     parser.add_argument("--env", required=True, choices=["test", "preprod", "prod"],
                         help="Target environment")
-    parser.add_argument("--user", required=True,
-                        help="Username (for logging only; login is manual in the browser)")
+    parser.add_argument("--user", default=None,
+                        help="Username (optional, for log output only; login is done manually in the browser)")
     parser.add_argument("--browser", default="all",
                         choices=SUPPORTED_BROWSERS + ["all"],
                         help="Browser to capture (default: all)")
@@ -225,9 +225,6 @@ def main():
                         help="Session storage directory (default: ~/.refua_sessions)")
 
     args = parser.parse_args()
-
-    if not args.user.strip():
-        parser.error("--user cannot be empty")
 
     browsers = _browsers_to_capture(args.browser)
     expires_str = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d %H:%M")
