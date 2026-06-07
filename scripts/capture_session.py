@@ -31,10 +31,10 @@ from colorama import Fore, init
 from playwright.sync_api import sync_playwright
 
 from refua_core.config.environment import (
+    _APP_REGISTRY,
     EnvironmentManager,
     InvalidEnvironmentError,
     UnknownAppError,
-    _APP_REGISTRY,
 )
 from refua_core.config.session_manager import SessionStateManager
 
@@ -56,19 +56,21 @@ SUPPORTED_BROWSERS = ["chromium", "firefox", "webkit", "safari"]
 # Maps CLI device names to Playwright built-in descriptor names.
 # Playwright's p.devices[name] provides viewport, UA, scale factor, isMobile, hasTouch.
 _DEVICE_MAP = {
-    "desktop":       None,
-    "iphone":        "iPhone 14 Pro",
+    "desktop": None,
+    "iphone": "iPhone 14 Pro",
     "iphone_14_pro": "iPhone 14 Pro",
-    "iphone_14":     "iPhone 14",
-    "iphone_13":     "iPhone 13",
-    "iphone_12":     "iPhone 12",
-    "android":       "Pixel 7",
+    "iphone_14": "iPhone 14",
+    "iphone_13": "iPhone 13",
+    "iphone_12": "iPhone 12",
+    "android": "Pixel 7",
     "android_pixel": "Pixel 7",
     "android_galaxy": "Galaxy S9+",
 }
 
 
-def _setup_env_manager(env: str, app: str = "meditek", session_dir: str = None) -> EnvironmentManager:
+def _setup_env_manager(
+    env: str, app: str = "meditek", session_dir: str = None
+) -> EnvironmentManager:
     """Reset and reinitialise the EnvironmentManager singleton for the given app+env."""
     os.environ["TEST_ENV"] = env
     os.environ["TEST_APP"] = app
@@ -83,12 +85,18 @@ def _browsers_to_capture(browser_arg: str) -> list[str]:
 
 
 def _log_auth_request(request):
-    if any(p in request.url.lower() for p in ["login", "auth", "token", "microsoft", "oauth", "msal"]):
+    if any(
+        p in request.url.lower()
+        for p in ["login", "auth", "token", "microsoft", "oauth", "msal"]
+    ):
         logger.debug("→ Auth Request: %s %s", request.method, request.url)
 
 
 def _log_auth_response(response):
-    if any(p in response.url.lower() for p in ["login", "auth", "token", "microsoft", "oauth", "msal"]):
+    if any(
+        p in response.url.lower()
+        for p in ["login", "auth", "token", "microsoft", "oauth", "msal"]
+    ):
         logger.debug("← Auth Response: %s %s", response.status, response.url)
         if response.status >= 400:
             logger.warning("Auth Error: %s at %s", response.status, response.url)
@@ -105,15 +113,19 @@ def capture_session_for_browser(
 
     Returns the path to the saved session file.
     """
-    os.environ["BROWSER"] = browser  # ensures get_session_file_path uses the right browser name
+    os.environ["BROWSER"] = (
+        browser  # ensures get_session_file_path uses the right browser name
+    )
     env_mgr = _setup_env_manager(env, app, session_dir)
     base_url = env_mgr.get_base_url()
     env_mgr.get_session_dir().mkdir(parents=True, exist_ok=True)
 
     display_device = _DEVICE_MAP.get(device.lower(), device) or "Desktop"
-    print(f"\n{Fore.CYAN}{'='*70}")
-    print(f"{Fore.CYAN}BROWSER: {browser.upper()} | APP: {app} | ENV: {env.upper()} | DEVICE: {display_device}")
-    print(f"{Fore.CYAN}{'='*70}\n")
+    print(f"\n{Fore.CYAN}{'=' * 70}")
+    print(
+        f"{Fore.CYAN}BROWSER: {browser.upper()} | APP: {app} | ENV: {env.upper()} | DEVICE: {display_device}"
+    )
+    print(f"{Fore.CYAN}{'=' * 70}\n")
 
     with sync_playwright() as p:
         browser_launcher = getattr(p, browser, None)
@@ -122,9 +134,9 @@ def capture_session_for_browser(
 
         _incognito_args = {
             "chromium": ["--no-sandbox", "--disable-dev-shm-usage", "--incognito"],
-            "firefox":  ["-private"],
-            "webkit":   [],   # WebKit contexts are already sandboxed
-            "safari":   [],
+            "firefox": ["-private"],
+            "webkit": [],  # WebKit contexts are already sandboxed
+            "safari": [],
         }
         launch_kwargs = {
             "headless": False,
@@ -134,8 +146,12 @@ def capture_session_for_browser(
         browser_instance = browser_launcher.launch(**launch_kwargs)
 
         # Resolve device emulation config from Playwright's built-in descriptors
-        playwright_device_name = _DEVICE_MAP.get(device.lower() if device else "desktop")
-        device_kwargs = dict(p.devices[playwright_device_name]) if playwright_device_name else {}
+        playwright_device_name = _DEVICE_MAP.get(
+            device.lower() if device else "desktop"
+        )
+        device_kwargs = (
+            dict(p.devices[playwright_device_name]) if playwright_device_name else {}
+        )
         if playwright_device_name:
             logger.info("Device emulation: %s", playwright_device_name)
 
@@ -151,60 +167,77 @@ def capture_session_for_browser(
         page = context.new_page()
 
         try:
+            # ── Loading ───────────────────────────────────────────────────────
+            print(f"{Fore.YELLOW}⏳  Opening browser — waiting for login page to load...")
+            print(f"{Fore.YELLOW}    (may take a moment on slow network)\n")
+
             logger.info("Navigating to %s", base_url)
-            page.goto(base_url, wait_until="networkidle", timeout=60000)
+            page.goto(base_url, wait_until="networkidle", timeout=120000)
 
             # 50% zoom for better visibility on high-resolution screens
             page.evaluate("document.body.style.zoom = '0.5'")
 
-            # Verify we landed on the expected login page
+            # Wait for the login page to be fully ready before prompting the user
             try:
-                page.wait_for_selector("#login-page-title", timeout=15000)
+                page.wait_for_selector("#login-page-title", timeout=30000)
+                print(f"{Fore.GREEN}✅  Login page is ready\n")
                 logger.info("Login page confirmed (#login-page-title found)")
             except Exception:
+                print(f"{Fore.YELLOW}⚠   Could not confirm login page — check the browser before continuing\n")
                 logger.warning("Could not find #login-page-title — proceeding anyway")
 
             # ── STEP 1: credentials ──────────────────────────────────────────
-            print(f"{Fore.YELLOW}{'='*70}")
-            print(f"{Fore.YELLOW}STEP 1 of 2 — Enter your credentials")
-            print(f"{Fore.YELLOW}{'='*70}")
-            print(f"{Fore.GREEN}1. →  Type your username in the browser")
-            print(f"{Fore.GREEN}2. →  Type your password in the browser")
-            print(f"\n{Fore.GREEN}➜   Press ENTER here when done to submit...")
+            print(f"{Fore.YELLOW}{'=' * 70}")
+            print(f"{Fore.YELLOW}STEP 1 of 2 — Fill in your credentials")
+            print(f"{Fore.YELLOW}{'=' * 70}")
+            print(f"{Fore.WHITE}Do ALL of these in the browser first:")
+            print(f"{Fore.GREEN}  1.  Type your username")
+            print(f"{Fore.GREEN}  2.  Type your password")
+            print(f"{Fore.GREEN}  3.  Click the login button")
+            print(f"{Fore.GREEN}  4.  Wait for the next page to fully appear")
+            print(f"\n{Fore.CYAN}  Then come back here and press ENTER ↵")
             input()
 
             # Click the login submit button
-            try:
-                page.locator("#login-button").click(timeout=10000)
-                logger.info("Clicked #login-button")
-            except Exception as e:
-                logger.warning("Could not click #login-button: %s", e)
+            #       try:
+            #          page.locator("#login-button").click(timeout=10000)
+            #         logger.info("Clicked #login-button")
+            #    except Exception as e:
+            #       logger.warning("Could not click #login-button: %s", e)
 
             # Dismiss PWA install prompt if it appears
+            print(f"\n{Fore.YELLOW}⏳  Checking for popups...")
             try:
-                page.wait_for_selector('//*[@id="download-pwa"]/div[3]/div', timeout=5000)
+                page.wait_for_selector(
+                    '//*[@id="download-pwa"]/div[3]/div', timeout=8000
+                )
                 logger.info("PWA install prompt detected — dismissing")
                 page.locator('[data-testid="CloseIcon"]').click(timeout=5000)
-                page.wait_for_load_state("networkidle", timeout=10000)
+                page.wait_for_load_state("networkidle", timeout=15000)
                 logger.info("PWA prompt dismissed")
+                print(f"{Fore.GREEN}✅  Popup dismissed\n")
             except Exception:
-                pass  # prompt did not appear — continue normally
+                print(f"{Fore.GREEN}✅  No popup detected\n")
 
             # ── STEP 2: 2FA ──────────────────────────────────────────────────
-            print(f"\n{Fore.YELLOW}{'='*70}")
+            print(f"{Fore.YELLOW}{'=' * 70}")
             print(f"{Fore.YELLOW}STEP 2 of 2 — Complete Microsoft 2FA")
-            print(f"{Fore.YELLOW}{'='*70}")
-            print(f"{Fore.GREEN}→  Complete the 2FA verification in the browser")
-            print(f"{Fore.GREEN}→  Wait until the main application page has fully loaded")
-            print(f"\n{Fore.YELLOW}⚠   DO NOT close the browser — the script will close it automatically.")
-            print(f"\n{Fore.GREEN}➜   Press ENTER here when you are on the main page...")
+            print(f"{Fore.YELLOW}{'=' * 70}")
+            print(f"{Fore.WHITE}Do ALL of these in the browser first:")
+            print(f"{Fore.GREEN}  1.  Approve the 2FA request on your phone / authenticator")
+            print(f"{Fore.GREEN}  2.  Wait for the home page to fully load")
+            print(f"{Fore.GREEN}  3.  Make sure you can see the app content (not a loading spinner)")
+            print(f"\n{Fore.YELLOW}⚠   Do NOT close the browser — the script will close it automatically")
+            print(f"\n{Fore.CYAN}  Then come back here and press ENTER ↵")
             input()
 
             print(f"\n{Fore.YELLOW}📸 Capturing authentication state...")
 
             session_mgr = SessionStateManager()
             if not session_mgr.is_authenticated(page):
-                logger.warning("Page does not look authenticated; saving session anyway.")
+                logger.warning(
+                    "Page does not look authenticated; saving session anyway."
+                )
 
             session_path = Path(
                 session_mgr.save_session_state(
@@ -216,7 +249,9 @@ def capture_session_for_browser(
 
             # Save a timestamped backup alongside the _latest file
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            ts_path = session_path.parent / session_path.name.replace("_latest.json", f"_{ts}.json")
+            ts_path = session_path.parent / session_path.name.replace(
+                "_latest.json", f"_{ts}.json"
+            )
             shutil.copy2(session_path, ts_path)
             logger.info("Timestamped backup: %s", ts_path)
 
@@ -230,9 +265,9 @@ def capture_session_for_browser(
 
 def _print_success(session_path: Path, app: str, env: str, browser: str):
     expires_str = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d %H:%M")
-    print(f"\n{Fore.GREEN}{'='*70}")
+    print(f"\n{Fore.GREEN}{'=' * 70}")
     print(f"{Fore.GREEN}✅ SUCCESS! Authentication State Captured")
-    print(f"{Fore.GREEN}{'='*70}\n")
+    print(f"{Fore.GREEN}{'=' * 70}\n")
     print(f"{Fore.WHITE}📁 File:    {Fore.CYAN}{session_path}")
     print(f"{Fore.WHITE}🔑 App:     {Fore.CYAN}{app}")
     print(f"{Fore.WHITE}🌍 Env:     {Fore.CYAN}{env}")
@@ -240,7 +275,7 @@ def _print_success(session_path: Path, app: str, env: str, browser: str):
     print(f"{Fore.WHITE}⏰ Expires: {Fore.CYAN}{expires_str}")
     print(f"\n{Fore.YELLOW}Run tests with:")
     print(f"{Fore.CYAN}  TEST_APP={app} TEST_ENV={env} BROWSER={browser} pytest")
-    print(f"{Fore.GREEN}{'='*70}\n")
+    print(f"{Fore.GREEN}{'=' * 70}\n")
 
 
 def capture_sessions_for_all_browsers(
@@ -256,7 +291,9 @@ def capture_sessions_for_all_browsers(
     for i, browser in enumerate(SUPPORTED_BROWSERS, 1):
         logger.info("[%d/%d] Capturing %s...", i, len(SUPPORTED_BROWSERS), browser)
         try:
-            results[browser] = capture_session_for_browser(env, browser, app, device, session_dir)
+            results[browser] = capture_session_for_browser(
+                env, browser, app, device, session_dir
+            )
         except Exception as e:
             logger.error("Failed to capture %s: %s", browser, e)
             failed.append(browser)
@@ -271,20 +308,40 @@ def main():
         description="Capture authenticated browser sessions for 2FA bypass.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--app", default="meditek", choices=known_apps,
-                        help=f"Application to capture session for (default: meditek). Known: {known_apps}")
-    parser.add_argument("--env", required=True, choices=["test", "preprod", "prod"],
-                        help="Target environment")
-    parser.add_argument("--user", default=None,
-                        help="Username (optional, for log output only; login is done manually in the browser)")
-    parser.add_argument("--browser", default="all",
-                        choices=SUPPORTED_BROWSERS + ["all"],
-                        help="Browser to capture (default: all)")
-    parser.add_argument("--device", default="desktop",
-                        choices=list(_DEVICE_MAP.keys()),
-                        help="Device profile (default: desktop)")
-    parser.add_argument("--session-dir", default=None,
-                        help="Session storage directory (default: ~/.refua_sessions)")
+    parser.add_argument(
+        "--app",
+        default="meditek",
+        choices=known_apps,
+        help=f"Application to capture session for (default: meditek). Known: {known_apps}",
+    )
+    parser.add_argument(
+        "--env",
+        required=True,
+        choices=["test", "preprod", "prod"],
+        help="Target environment",
+    )
+    parser.add_argument(
+        "--user",
+        default=None,
+        help="Username (optional, for log output only; login is done manually in the browser)",
+    )
+    parser.add_argument(
+        "--browser",
+        default="all",
+        choices=SUPPORTED_BROWSERS + ["all"],
+        help="Browser to capture (default: all)",
+    )
+    parser.add_argument(
+        "--device",
+        default="desktop",
+        choices=list(_DEVICE_MAP.keys()),
+        help="Device profile (default: desktop)",
+    )
+    parser.add_argument(
+        "--session-dir",
+        default=None,
+        help="Session storage directory (default: ~/.refua_sessions)",
+    )
 
     args = parser.parse_args()
 
@@ -296,27 +353,31 @@ def main():
             session_path = capture_session_for_browser(
                 args.env, browsers[0], args.app, args.device, args.session_dir
             )
-            print(f"\n{'='*70}")
+            print(f"\n{'=' * 70}")
             print("SESSION CAPTURED")
             print(f"  File:    {session_path}")
             print(f"  App:     {args.app}")
             print(f"  Browser: {browsers[0]}")
             print(f"  Expires: {expires_str}")
-            print(f"  Run:     TEST_APP={args.app} TEST_ENV={args.env} BROWSER={browsers[0]} pytest")
-            print(f"{'='*70}\n")
+            print(
+                f"  Run:     TEST_APP={args.app} TEST_ENV={args.env} BROWSER={browsers[0]} pytest"
+            )
+            print(f"{'=' * 70}\n")
 
         else:
             results, failed = capture_sessions_for_all_browsers(
                 args.env, args.app, args.device, args.session_dir
             )
-            print(f"\n{'='*70}")
-            print(f"SESSION CAPTURE COMPLETE | app: {args.app} | expires: {expires_str}")
+            print(f"\n{'=' * 70}")
+            print(
+                f"SESSION CAPTURE COMPLETE | app: {args.app} | expires: {expires_str}"
+            )
             for browser, path in results.items():
                 print(f"  [OK]   {browser}: {Path(path).name}")
             for browser in failed:
                 print(f"  [FAIL] {browser}")
             print(f"  Run:  TEST_APP={args.app} TEST_ENV={args.env} pytest")
-            print(f"{'='*70}\n")
+            print(f"{'=' * 70}\n")
 
         sys.exit(0)
 
