@@ -76,13 +76,12 @@ def _log_auth_response(response):
 
 def capture_session_for_browser(
     env: str,
-    user: str,
     browser: str,
     app: str = "meditek",
     device: str = "desktop",
     session_dir: str = None,
 ) -> str:
-    """Launch an interactive browser, wait for ENTER after login+2FA, then save session.
+    """Launch an interactive browser, guide through login + 2FA, then save session.
 
     Returns the path to the saved session file.
     """
@@ -93,18 +92,7 @@ def capture_session_for_browser(
 
     print(f"\n{Fore.CYAN}{'='*70}")
     print(f"{Fore.CYAN}BROWSER: {browser.upper()} | APP: {app} | ENV: {env.upper()} | DEVICE: {device}")
-    print(f"{Fore.CYAN}{'='*70}")
-    print(f"\n{Fore.YELLOW}{'='*70}")
-    print(f"{Fore.YELLOW}MANUAL AUTHENTICATION REQUIRED — {env.upper()} Environment")
-    print(f"{Fore.YELLOW}{'='*70}")
-    print(f"\n{Fore.WHITE}Follow these steps:")
-    print(f"{Fore.GREEN}1. ✓  Browser will open at: {Fore.CYAN}{base_url}")
-    print(f"{Fore.GREEN}2. →  Enter your username and password")
-    print(f"{Fore.GREEN}3. →  Complete Microsoft 2FA verification")
-    print(f"{Fore.GREEN}4. →  Wait for the main application page to load")
-    print(f"{Fore.GREEN}5. →  Return here and press ENTER")
-    print(f"\n{Fore.YELLOW}⚠   DO NOT close the browser — the script will close it automatically.")
-    print(f"{Fore.YELLOW}{'='*70}\n")
+    print(f"{Fore.CYAN}{'='*70}\n")
 
     with sync_playwright() as p:
         browser_launcher = getattr(p, browser, None)
@@ -141,7 +129,47 @@ def capture_session_for_browser(
             # 50% zoom for better visibility on high-resolution screens
             page.evaluate("document.body.style.zoom = '0.5'")
 
-            print(f"{Fore.GREEN}➜   Press ENTER after completing login and 2FA...")
+            # Verify we landed on the expected login page
+            try:
+                page.wait_for_selector("#login-page-title", timeout=15000)
+                logger.info("Login page confirmed (#login-page-title found)")
+            except Exception:
+                logger.warning("Could not find #login-page-title — proceeding anyway")
+
+            # ── STEP 1: credentials ──────────────────────────────────────────
+            print(f"{Fore.YELLOW}{'='*70}")
+            print(f"{Fore.YELLOW}STEP 1 of 2 — Enter your credentials")
+            print(f"{Fore.YELLOW}{'='*70}")
+            print(f"{Fore.GREEN}1. →  Type your username in the browser")
+            print(f"{Fore.GREEN}2. →  Type your password in the browser")
+            print(f"\n{Fore.GREEN}➜   Press ENTER here when done to submit...")
+            input()
+
+            # Click the login submit button
+            try:
+                page.locator("#login-button").click(timeout=10000)
+                logger.info("Clicked #login-button")
+            except Exception as e:
+                logger.warning("Could not click #login-button: %s", e)
+
+            # Dismiss PWA install prompt if it appears
+            try:
+                page.wait_for_selector('//*[@id="download-pwa"]/div[3]/div', timeout=5000)
+                logger.info("PWA install prompt detected — dismissing")
+                page.locator('[data-testid="CloseIcon"]').click(timeout=5000)
+                page.wait_for_load_state("networkidle", timeout=10000)
+                logger.info("PWA prompt dismissed")
+            except Exception:
+                pass  # prompt did not appear — continue normally
+
+            # ── STEP 2: 2FA ──────────────────────────────────────────────────
+            print(f"\n{Fore.YELLOW}{'='*70}")
+            print(f"{Fore.YELLOW}STEP 2 of 2 — Complete Microsoft 2FA")
+            print(f"{Fore.YELLOW}{'='*70}")
+            print(f"{Fore.GREEN}→  Complete the 2FA verification in the browser")
+            print(f"{Fore.GREEN}→  Wait until the main application page has fully loaded")
+            print(f"\n{Fore.YELLOW}⚠   DO NOT close the browser — the script will close it automatically.")
+            print(f"\n{Fore.GREEN}➜   Press ENTER here when you are on the main page...")
             input()
 
             print(f"\n{Fore.YELLOW}📸 Capturing authentication state...")
@@ -189,7 +217,6 @@ def _print_success(session_path: Path, app: str, env: str, browser: str):
 
 def capture_sessions_for_all_browsers(
     env: str,
-    user: str,
     app: str = "meditek",
     device: str = "desktop",
     session_dir: str = None,
@@ -201,7 +228,7 @@ def capture_sessions_for_all_browsers(
     for i, browser in enumerate(SUPPORTED_BROWSERS, 1):
         logger.info("[%d/%d] Capturing %s...", i, len(SUPPORTED_BROWSERS), browser)
         try:
-            results[browser] = capture_session_for_browser(env, user, browser, app, device, session_dir)
+            results[browser] = capture_session_for_browser(env, browser, app, device, session_dir)
         except Exception as e:
             logger.error("Failed to capture %s: %s", browser, e)
             failed.append(browser)
@@ -239,7 +266,7 @@ def main():
     try:
         if len(browsers) == 1:
             session_path = capture_session_for_browser(
-                args.env, args.user, browsers[0], args.app, args.device, args.session_dir
+                args.env, browsers[0], args.app, args.device, args.session_dir
             )
             print(f"\n{'='*70}")
             print("SESSION CAPTURED")
@@ -252,7 +279,7 @@ def main():
 
         else:
             results, failed = capture_sessions_for_all_browsers(
-                args.env, args.user, args.app, args.device, args.session_dir
+                args.env, args.app, args.device, args.session_dir
             )
             print(f"\n{'='*70}")
             print(f"SESSION CAPTURE COMPLETE | app: {args.app} | expires: {expires_str}")
