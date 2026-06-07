@@ -111,9 +111,16 @@ def capture_session_for_browser(
         if browser_launcher is None:
             raise ValueError(f"Browser '{browser}' not supported by Playwright")
 
-        launch_kwargs = {"headless": False}
-        if browser == "chromium":
-            launch_kwargs["args"] = ["--no-sandbox", "--disable-dev-shm-usage"]
+        _incognito_args = {
+            "chromium": ["--no-sandbox", "--disable-dev-shm-usage", "--incognito"],
+            "firefox":  ["-private"],
+            "webkit":   [],   # WebKit contexts are already sandboxed
+            "safari":   [],
+        }
+        launch_kwargs = {
+            "headless": False,
+            "args": _incognito_args.get(browser, []),
+        }
 
         browser_instance = browser_launcher.launch(**launch_kwargs)
         context = browser_instance.new_context(
