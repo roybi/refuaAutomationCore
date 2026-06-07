@@ -21,6 +21,11 @@ class InvalidEnvironmentError(Exception):
     pass
 
 
+class UnknownAppError(Exception):
+    """Raised when TEST_APP references an unregistered application"""
+    pass
+
+
 class BrowserType(str, Enum):
     """Supported browser types"""
     CHROMIUM = "chromium"
@@ -57,6 +62,7 @@ class AuthConfig:
 class Environment:
     """Environment configuration"""
     name: EnvType
+    app: str
     base_url: str
     api_url: str
     auth_config: AuthConfig
@@ -69,45 +75,81 @@ class Environment:
         if self.auth_state_file:
             return Path(self.auth_state_file)
 
-        filename = f"auth_state_{self.name.value}_chromium_latest.json"
+        # Browser resolved dynamically; EnvironmentManager.get_session_file_path() is preferred
+        filename = f"auth_state_{self.app}_{self.name.value}_chromium_latest.json"
         return Path(self.session_state_dir) / filename
 
     def can_bypass_2fa(self) -> bool:
         return self.auth_config.bypass_2fa and self.auth_config.auth_method == "session_state"
 
 
-# Environment definitions - single source of truth
-_ENV_CONFIGS: dict[EnvType, dict] = {
-    EnvType.TEST: {
-        "base_url": "https://meditik.test.medical.idf.il/home",
-        "api_url": "https://meditik.test.medical.idf.il/api",
-        "auth_config": AuthConfig(
-            use_2fa=True,
-            bypass_2fa=True,
-            session_timeout=3600,
-            auth_method="session_state"
-        )
+# Application registry: app_name → {EnvType → {base_url, api_url, auth_config}}
+# Register additional apps via EnvironmentManager.register_app() before instantiation.
+_APP_REGISTRY: dict[str, dict[EnvType, dict]] = {
+    "meditek": {
+        EnvType.TEST: {
+            "base_url": "https://meditik.test.medical.idf.il/home",
+            "api_url": "https://meditik.test.medical.idf.il/api",
+            "auth_config": AuthConfig(
+                use_2fa=True,
+                bypass_2fa=True,
+                session_timeout=3600,
+                auth_method="session_state"
+            )
+        },
+        EnvType.PREPROD: {
+            "base_url": "https://meditik.preprod.medical.idf.il",
+            "api_url": "https://meditik.preprod.medical.idf.il/api",
+            "auth_config": AuthConfig(
+                use_2fa=True,
+                bypass_2fa=True,
+                session_timeout=3600,
+                auth_method="session_state"
+            )
+        },
+        EnvType.PROD: {
+            "base_url": "https://meditik.medical.idf.il/home",
+            "api_url": "https://meditik.medical.idf.il/api",
+            "auth_config": AuthConfig(
+                use_2fa=True,
+                bypass_2fa=False,
+                session_timeout=1800,
+                auth_method="manual"
+            )
+        }
     },
-    EnvType.PREPROD: {
-        "base_url": "https://meditik.preprod.medical.idf.il",
-        "api_url": "https://meditik.preprod.medical.idf.il/api",
-        "auth_config": AuthConfig(
-            use_2fa=True,
-            bypass_2fa=True,
-            session_timeout=3600,
-            auth_method="session_state"
-        )
+    "cpr-go": {
+        EnvType.TEST: {
+            "base_url": "https://cpr-go.test.medical.idf.il",
+            "api_url": "https://cpr-go.test.medical.idf.il/api",
+            "auth_config": AuthConfig(
+                use_2fa=True,
+                bypass_2fa=True,
+                session_timeout=3600,
+                auth_method="session_state"
+            )
+        },
+        EnvType.PREPROD: {
+            "base_url": "https://cpr-go.preprod.medical.idf.il",
+            "api_url": "https://cpr-go.preprod.medical.idf.il/api",
+            "auth_config": AuthConfig(
+                use_2fa=True,
+                bypass_2fa=True,
+                session_timeout=3600,
+                auth_method="session_state"
+            )
+        },
+        EnvType.PROD: {
+            "base_url": "https://cpr-go.medical.idf.il",
+            "api_url": "https://cpr-go.medical.idf.il/api",
+            "auth_config": AuthConfig(
+                use_2fa=True,
+                bypass_2fa=False,
+                session_timeout=1800,
+                auth_method="manual"
+            )
+        }
     },
-    EnvType.PROD: {
-        "base_url": "https://meditik.medical.idf.il/home",
-        "api_url": "https://meditik.medical.idf.il/api",
-        "auth_config": AuthConfig(
-            use_2fa=True,
-            bypass_2fa=False,
-            session_timeout=1800,
-            auth_method="manual"
-        )
-    }
 }
 
 
@@ -116,30 +158,57 @@ class EnvironmentManager:
     Centralized environment management.
     Singleton pattern for consistent state across tests.
     """
-    
+
     _instance: Optional['EnvironmentManager'] = None
-    
+
     def __new__(cls) -> 'EnvironmentManager':
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
-    
+
     def __init__(self):
         if self._initialized:
             return
 
+        self._current_app = self._resolve_app_from_system()
         self._current_env = self._resolve_env_from_system()
         self._session_states_dir = self._resolve_session_dir()
         self._session_states_dir.mkdir(parents=True, exist_ok=True)
         self._auth_state_file = self._resolve_auth_state_file()
         self._initialized = True
 
-        logger.info(f"EnvironmentManager initialized: {self._current_env.value}")
+        logger.info(f"EnvironmentManager initialized: app={self._current_app} env={self._current_env.value}")
         logger.debug(f"Session directory: {self._session_states_dir}")
         if self._auth_state_file:
             logger.debug(f"Auth state file: {self._auth_state_file}")
-    
+
+    @classmethod
+    def register_app(cls, app_name: str, configs: dict) -> None:
+        """Register a custom application in the app registry.
+
+        Call this before EnvironmentManager is first instantiated (e.g. in conftest.py).
+
+        Args:
+            app_name: Identifier used in TEST_APP (e.g. "my-app")
+            configs: Mapping of EnvType → {base_url, api_url, auth_config}
+        """
+        _APP_REGISTRY[app_name] = configs
+        logger.debug(f"Registered app: {app_name}")
+
+    def _resolve_app_from_system(self) -> str:
+        """Resolve app name from TEST_APP; default to 'meditek' for backward compatibility."""
+        app_str = os.getenv("TEST_APP", "meditek").lower().strip()
+
+        if app_str not in _APP_REGISTRY:
+            raise UnknownAppError(
+                f"Unknown TEST_APP value: '{app_str}'\n"
+                f"Known apps: {list(_APP_REGISTRY.keys())}\n"
+                "Register custom apps with EnvironmentManager.register_app() before use."
+            )
+
+        return app_str
+
     def _resolve_env_from_system(self) -> EnvType:
         """Resolve EnvType from TEST_ENV; raise if missing or invalid."""
         env_str = os.getenv("TEST_ENV")
@@ -208,20 +277,29 @@ class EnvironmentManager:
 
         return None
 
-    @lru_cache(maxsize=3)
+    @property
+    def current_app(self) -> str:
+        """Get current application name"""
+        return self._current_app
+
+    @lru_cache(maxsize=9)
     def get_environment(self, env_type: Optional[EnvType] = None) -> Environment:
-        """Get environment configuration (cached)"""
+        """Get environment configuration for the current app (cached)"""
         env_type = env_type or self._current_env
 
         if env_type is None:
             raise EnvironmentNotSetError("Environment type is required")
 
-        config = _ENV_CONFIGS[env_type]
+        app_configs = _APP_REGISTRY.get(self._current_app)
+        if app_configs is None:
+            raise UnknownAppError(f"App '{self._current_app}' not found in registry")
 
+        config = app_configs[env_type]
         auth_state_file = self._auth_state_file if env_type == self._current_env else None
 
         return Environment(
             name=env_type,
+            app=self._current_app,
             base_url=config["base_url"],
             api_url=config["api_url"],
             auth_config=config["auth_config"],
@@ -233,16 +311,16 @@ class EnvironmentManager:
     def current_env(self) -> EnvType:
         """Get current environment type"""
         return self._current_env
-    
+
     @current_env.setter
     def current_env(self, env_type: EnvType):
         """Set current environment"""
         if env_type is None:
             raise ValueError("Environment type cannot be None")
-        
+
         if not isinstance(env_type, EnvType):
             raise TypeError(f"Expected EnvType, got {type(env_type)}")
-        
+
         self._current_env = env_type
         self.get_environment.cache_clear()
         logger.info(f"Environment switched to: {env_type.value}")
@@ -277,9 +355,14 @@ class EnvironmentManager:
 
         return browser
 
-    def get_session_file_path(self, env_type: Optional[EnvType] = None) -> Path:
-        """Get path to session state file"""
-        return self.get_environment(env_type).session_file_path
+    def get_session_file_path(self, env_type: Optional[EnvType] = None, browser: Optional[str] = None) -> Path:
+        """Get path to session state file, namespaced by app, env, and browser."""
+        env = self.get_environment(env_type)
+        if env.auth_state_file:
+            return Path(env.auth_state_file)
+        resolved_browser = browser or self.get_browser_type()
+        filename = f"auth_state_{self._current_app}_{env.name.value}_{resolved_browser}_latest.json"
+        return self._session_states_dir / filename
 
     def get_auth_state_file(self, env_type: Optional[EnvType] = None) -> Optional[str]:
         return self.get_environment(env_type).auth_state_file
@@ -296,19 +379,21 @@ class EnvironmentManager:
     def get_env_summary(self) -> str:
         """Get human-readable environment summary"""
         env = self.get_environment()
-        session_exists = env.session_file_path.exists()
+        session_file = self.get_session_file_path()
+        session_exists = session_file.exists()
         session_dir = self.get_session_dir()
 
         return (
             f"\n{'='*60}\n"
-            f"Environment: {env.name.value.upper()}\n"
-            f"Base URL: {env.base_url}\n"
-            f"API URL: {env.api_url}\n"
-            f"2FA Bypass: {'Enabled' if env.can_bypass_2fa() else 'Disabled'}\n"
-            f"Session Timeout: {env.auth_config.session_timeout}s\n"
-            f"Session Directory: {session_dir}\n"
-            f"Session File: {env.session_file_path}\n"
-            f"Session Exists: {'Yes' if session_exists else 'No'}\n"
+            f"App:              {self._current_app}\n"
+            f"Environment:      {env.name.value.upper()}\n"
+            f"Base URL:         {env.base_url}\n"
+            f"API URL:          {env.api_url}\n"
+            f"2FA Bypass:       {'Enabled' if env.can_bypass_2fa() else 'Disabled'}\n"
+            f"Session Timeout:  {env.auth_config.session_timeout}s\n"
+            f"Session Dir:      {session_dir}\n"
+            f"Session File:     {session_file}\n"
+            f"Session Exists:   {'Yes' if session_exists else 'No'}\n"
             f"{'='*60}"
         )
     
@@ -331,16 +416,17 @@ def validate_environment():
     try:
         manager = get_env_manager()
         env = manager.get_environment()
-        
+        session_file = manager.get_session_file_path()
+
         # Validate session file exists if bypass is enabled
-        if env.can_bypass_2fa() and not env.session_file_path.exists():
+        if env.can_bypass_2fa() and not session_file.exists():
             logger.warning(
-                f"2FA bypass enabled but session file missing: {env.session_file_path}\n"
+                f"2FA bypass enabled but session file missing: {session_file}\n"
                 "Run session capture script first or disable 2FA bypass."
             )
-        
+
         return True
-        
-    except (EnvironmentNotSetError, InvalidEnvironmentError) as e:
+
+    except (EnvironmentNotSetError, InvalidEnvironmentError, UnknownAppError) as e:
         logger.error(str(e))
         raise
