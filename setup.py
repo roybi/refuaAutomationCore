@@ -46,6 +46,9 @@ setup(
         "Programming Language :: Python :: 3.12",
         "Topic :: Software Development :: Testing",
     ],
+    entry_points={
+        "pytest11": ["refua-core = refua_core.conftest"],
+    },
     keywords=["automation", "testing", "playwright", "meditek", "qa", "pytest"],
     project_urls={
         "Source": "https://github.com/roybi/refuaAutomationCore",

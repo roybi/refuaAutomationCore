@@ -2,6 +2,7 @@
 Pytest configuration and fixtures for refuaAutomationCore framework.
 
 Environment Parameters:
+- TEST_APP (optional): meditek, cpr-go, or any registered app (default: meditek)
 - TEST_ENV (required): test, preprod, or prod
 - BROWSER (optional): chromium, firefox, webkit, safari (default: chromium)
 - DEVICE (optional): desktop, iphone, android, etc. (default: desktop)
@@ -25,7 +26,11 @@ logger = logging.getLogger(__name__)
 def pytest_configure(config):
     """Convert pytest CLI options to env vars, then validate the environment."""
     # Only override when the option was explicitly passed — avoids clobbering
-    # values the caller already exported (e.g. BROWSER=firefox pytest).
+    # values the caller already exported (e.g. TEST_APP=cpr-go pytest).
+    test_app = config.getoption("--test-app", default=None)
+    if test_app is not None:
+        os.environ["TEST_APP"] = test_app
+
     test_env = config.getoption("--test-env", default=None)
     if test_env is not None:
         os.environ["TEST_ENV"] = test_env
@@ -64,6 +69,7 @@ def pytest_configure(config):
 def _log_execution_info():
     """Log resolved env vars at session start."""
     params = {
+        "TEST_APP": os.getenv("TEST_APP", "meditek"),
         "TEST_ENV": os.getenv("TEST_ENV", "NOT SET"),
         "BROWSER": os.getenv("BROWSER", "chromium"),
         "DEVICE": os.getenv("DEVICE", "desktop"),
@@ -77,6 +83,8 @@ def _log_execution_info():
 
 def pytest_addoption(parser):
     """Register framework-specific CLI options."""
+    parser.addoption("--test-app", default=None,
+                     help="Application to test: meditek, cpr-go, or any registered app (default: meditek)")
     parser.addoption("--test-env", default=None,
                      help="Target environment: test, preprod, or prod")
     parser.addoption("--browser", default="chromium",
