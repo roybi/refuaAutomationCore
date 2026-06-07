@@ -122,9 +122,8 @@ def capture_session_for_browser(
         page = context.new_page()
 
         try:
-            login_url = base_url.rstrip("/") + "/login"
-            logger.info("Navigating to %s", login_url)
-            page.goto(login_url, wait_until="networkidle", timeout=60000)
+            logger.info("Navigating to %s", base_url)
+            page.goto(base_url, wait_until="networkidle", timeout=60000)
 
             # 50% zoom for better visibility on high-resolution screens
             page.evaluate("document.body.style.zoom = '0.5'")
