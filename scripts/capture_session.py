@@ -21,6 +21,12 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# Force UTF-8 output on Windows — must happen before any print() or logging
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from colorama import Fore, init
 from playwright.sync_api import sync_playwright
 
