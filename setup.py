@@ -23,6 +23,7 @@ setup(
         "python-dotenv>=1.0.0",
         "requests>=2.31.0",
         "packaging>=21.0",
+        "colorama>=0.4.6",
     ],
     extras_require={
         "dev": [
