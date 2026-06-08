@@ -1,3 +1,3 @@
 @echo off
 python "%~dp0capture_session.py" %*
-pause
+if "%CI%"=="" if "%JENKINS_URL%"=="" pause

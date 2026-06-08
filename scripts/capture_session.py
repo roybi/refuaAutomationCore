@@ -51,7 +51,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-SUPPORTED_BROWSERS = ["chromium", "firefox", "webkit", "safari"]
+SUPPORTED_BROWSERS = ["chromium", "firefox", "safari"]
 
 # Maps CLI device names to Playwright built-in descriptor names.
 # Playwright's p.devices[name] provides viewport, UA, scale factor, isMobile, hasTouch.
@@ -71,7 +71,6 @@ _DEVICE_MAP = {
 def _setup_env_manager(
     env: str, app: str = "meditek", session_dir: str = None
 ) -> EnvironmentManager:
-    """Reset and reinitialise the EnvironmentManager singleton for the given app+env."""
     os.environ["TEST_ENV"] = env
     os.environ["TEST_APP"] = app
     if session_dir:
@@ -102,20 +101,119 @@ def _log_auth_response(response):
             logger.warning("Auth Error: %s at %s", response.status, response.url)
 
 
+# ── Microsoft login helpers ──────────────────────────────────────────────────
+
+
+def _click_submit(page, timeout: int = 10000) -> bool:
+    """Click the Next / Submit / Sign-in button on Microsoft login pages.
+
+    Tries multiple selectors so it works regardless of which step we're on.
+    """
+    for sel in [
+        "#idSIButton9",
+        'input[type="submit"]',
+        'button[type="submit"]',
+        'button:has-text("Next")',
+        'button:has-text("Sign in")',
+    ]:
+        try:
+            btn = page.locator(sel).first
+            if btn.is_visible(timeout=2000):
+                btn.click(timeout=timeout)
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _auto_microsoft_login(page, username: str, password: str) -> bool:
+    """Auto-fill Microsoft AAD login: username → Next, password → Sign in.
+
+    Uses element-based waits only — not networkidle — so it works on
+    both fast and slow networks. Returns True when credentials are submitted.
+    The caller must still handle the 2FA step.
+    """
+    try:
+        # ── Username ──────────────────────────────────────────────────────────
+        user_input = page.locator('input[name="loginfmt"], input[type="email"]').first
+        user_input.wait_for(state="visible", timeout=30000)
+        user_input.fill(username)
+        logger.info("Filled username")
+        _click_submit(page)
+        logger.info("Clicked Next after username")
+
+        # ── Password ──────────────────────────────────────────────────────────
+        pass_input = page.locator('input[name="passwd"], input[type="password"]').first
+        pass_input.wait_for(state="visible", timeout=30000)
+        pass_input.fill(password)
+        logger.info("Filled password")
+        _click_submit(page)
+        logger.info("Password submitted — 2FA page should appear")
+
+        return True
+
+    except Exception as e:
+        logger.error("Auto-login failed: %s", e)
+        return False
+
+
+def _extract_2fa_number(page) -> str | None:
+    """Try to read the number shown on the Microsoft 2FA number-matching page.
+
+    Returns the number string if found, or None if the page layout is unexpected.
+    """
+    for sel in [
+        "#idRichContext_DisplaySign",
+        '[data-bind*="displaySign"]',
+        ".displaySign",
+        "#displaySign",
+        '[aria-label*="number"]',
+    ]:
+        try:
+            el = page.locator(sel).first
+            if el.is_visible(timeout=1500):
+                text = el.text_content(timeout=2000).strip()
+                if text:
+                    return text
+        except Exception:
+            continue
+    return None
+
+
+def _handle_stay_signed_in(page, timeout: int = 20000) -> bool:
+    """Auto-click 'No' on Microsoft 'Stay signed in?' (KMSI) page.
+
+    Returns True if the page was found and dismissed, False if it never appeared.
+    """
+    try:
+        no_btn = page.locator("#idBtn_Back").first
+        no_btn.wait_for(state="visible", timeout=timeout)
+        logger.info("'Stay signed in?' page detected — clicking No")
+        no_btn.click(timeout=5000)
+        print(f"{Fore.GREEN}✅  'Stay signed in?' — clicked No automatically\n")
+        return True
+    except Exception:
+        logger.debug("'Stay signed in?' page not detected")
+        return False
+
+
+# ── Main capture ─────────────────────────────────────────────────────────────
+
+
 def capture_session_for_browser(
     env: str,
     browser: str,
     app: str = "meditek",
     device: str = "desktop",
     session_dir: str = None,
+    username: str = None,
+    password: str = None,
 ) -> str:
     """Launch an interactive browser, guide through login + 2FA, then save session.
 
     Returns the path to the saved session file.
     """
-    os.environ["BROWSER"] = (
-        browser  # ensures get_session_file_path uses the right browser name
-    )
+    os.environ["BROWSER"] = browser
     env_mgr = _setup_env_manager(env, app, session_dir)
     base_url = env_mgr.get_base_url()
     env_mgr.get_session_dir().mkdir(parents=True, exist_ok=True)
@@ -135,17 +233,14 @@ def capture_session_for_browser(
         _incognito_args = {
             "chromium": ["--no-sandbox", "--disable-dev-shm-usage", "--incognito"],
             "firefox": ["-private"],
-            "webkit": [],  # WebKit contexts are already sandboxed
+            # "webkit": [],
             "safari": [],
         }
-        launch_kwargs = {
-            "headless": False,
-            "args": _incognito_args.get(browser, []),
-        }
+        browser_instance = browser_launcher.launch(
+            headless=False,
+            args=_incognito_args.get(browser, []),
+        )
 
-        browser_instance = browser_launcher.launch(**launch_kwargs)
-
-        # Resolve device emulation config from Playwright's built-in descriptors
         playwright_device_name = _DEVICE_MAP.get(
             device.lower() if device else "desktop"
         )
@@ -160,77 +255,131 @@ def capture_session_for_browser(
             locale="he-IL",
             timezone_id="Asia/Jerusalem",
         )
-
         context.on("request", _log_auth_request)
         context.on("response", _log_auth_response)
-
         page = context.new_page()
 
         try:
-            # ── Loading ───────────────────────────────────────────────────────
-            print(f"{Fore.YELLOW}⏳  Opening browser — waiting for login page to load...")
-            print(f"{Fore.YELLOW}    (may take a moment on slow network)\n")
-
+            # ── 1. Load app ───────────────────────────────────────────────────
+            print(
+                f"{Fore.YELLOW}⏳  Opening {base_url} — may take a moment on slow network..."
+            )
             logger.info("Navigating to %s", base_url)
-            page.goto(base_url, wait_until="networkidle", timeout=120000)
+            page.goto(base_url, wait_until="domcontentloaded", timeout=120000)
 
             # 50% zoom for better visibility on high-resolution screens
             page.evaluate("document.body.style.zoom = '0.5'")
 
-            # Wait for the login page to be fully ready before prompting the user
+            # ── 2. Connection page (optional interstitial) ─────────────────────
             try:
-                page.wait_for_selector("#login-page-title", timeout=30000)
-                print(f"{Fore.GREEN}✅  Login page is ready\n")
-                logger.info("Login page confirmed (#login-page-title found)")
+                page.wait_for_selector("#connection-page-title", timeout=10000)
+                logger.info("Connection page detected — clicking login")
+                print(f"{Fore.GREEN}✅  Connection page loaded\n")
+                page.locator("#login-button").click(timeout=10000)
             except Exception:
-                print(f"{Fore.YELLOW}⚠   Could not confirm login page — check the browser before continuing\n")
+                logger.info("No connection page — proceeding directly to login")
+
+            # ── 3. Wait for app login page ────────────────────────────────────
+            try:
+                page.wait_for_selector("#login-page-title", timeout=60000)
+                print(f"{Fore.GREEN}✅  Login page is ready\n")
+                logger.info("Login page confirmed (#login-page-title)")
+            except Exception:
+                print(
+                    f"{Fore.YELLOW}⚠   Could not confirm login page — check the browser\n"
+                )
                 logger.warning("Could not find #login-page-title — proceeding anyway")
 
-            # ── STEP 1: credentials ──────────────────────────────────────────
+            # ── 4. Credentials ────────────────────────────────────────────────
+            if username and password:
+                # AUTO mode: script fills username + password
+                print(f"{Fore.YELLOW}⏳  Clicking login button...")
+                try:
+                    page.locator("#login-button").click(timeout=10000)
+                    logger.info("Clicked #login-button")
+                except Exception as e:
+                    logger.warning("Could not click #login-button: %s", e)
+
+                print(f"{Fore.YELLOW}⏳  Filling credentials automatically...")
+                ok = _auto_microsoft_login(page, username, password)
+                if ok:
+                    print(
+                        f"{Fore.GREEN}✅  Credentials submitted — waiting for 2FA...\n"
+                    )
+                else:
+                    print(
+                        f"{Fore.YELLOW}⚠   Auto-login had issues — "
+                        f"complete the credentials manually in the browser\n"
+                    )
+
+            else:
+                # MANUAL mode: user fills credentials
+                print(f"{Fore.YELLOW}{'=' * 70}")
+                print(f"{Fore.YELLOW}STEP 1 of 2 — Log in with your credentials")
+                print(f"{Fore.YELLOW}{'=' * 70}")
+                print(f"{Fore.WHITE}In the browser, do all of these:")
+                print(f"{Fore.GREEN}  1.  Click the login button")
+                print(f"{Fore.GREEN}  2.  Enter your username  →  click Next")
+                print(f"{Fore.GREEN}  3.  Enter your password  →  click Sign in")
+                print(
+                    f"{Fore.GREEN}  4.  Wait until a large number appears on screen (2FA step)"
+                )
+                print(
+                    f"\n{Fore.CYAN}  When you see the number on screen, press ENTER here ↵"
+                )
+                input()
+
+            # ── 5. 2FA — display number and wait for approval ─────────────────
+            two_fa_number = _extract_2fa_number(page)
+
+            print(f"\n{Fore.YELLOW}{'=' * 70}")
+            print(f"{Fore.YELLOW}STEP 2 of 2 — Approve Microsoft 2FA in Authenticator")
             print(f"{Fore.YELLOW}{'=' * 70}")
-            print(f"{Fore.YELLOW}STEP 1 of 2 — Fill in your credentials")
-            print(f"{Fore.YELLOW}{'=' * 70}")
-            print(f"{Fore.WHITE}Do ALL of these in the browser first:")
-            print(f"{Fore.GREEN}  1.  Enter your username  →  click Submit")
-            print(f"{Fore.GREEN}  2.  Enter your password  →  click Submit")
-            print(f"{Fore.GREEN}  3.  Wait until the authenticator number page appears")
-            print(f"\n{Fore.CYAN}  Then come back here and press ENTER ↵")
+
+            if two_fa_number:
+                print(
+                    f"\n{Fore.WHITE}Number shown on screen (enter this in Authenticator):"
+                )
+                print(f"\n        {Fore.GREEN}{two_fa_number}        \n")
+            else:
+                print(
+                    f"\n{Fore.WHITE}A number is shown in the browser — enter it in Authenticator.\n"
+                )
+
+            print(f"{Fore.GREEN}  → Open Microsoft Authenticator on your phone")
+            print(f"{Fore.GREEN}  → Enter / tap the number when prompted")
+            print(f"{Fore.GREEN}  → Confirm / Approve")
+            print(
+                f"\n{Fore.YELLOW}⚠   Do NOT close the browser — the script handles everything after this"
+            )
+            print(
+                f"\n{Fore.CYAN}  Press ENTER here after you have approved in the app ↵"
+            )
             input()
 
-            # Click the login submit button
-            #       try:
-            #          page.locator("#login-button").click(timeout=10000)
-            #         logger.info("Clicked #login-button")
-            #    except Exception as e:
-            #       logger.warning("Could not click #login-button: %s", e)
+            # ── 6. Auto-handle 'Stay signed in?' ──────────────────────────────
+            print(f"\n{Fore.YELLOW}⏳  Handling post-login pages...")
+            _handle_stay_signed_in(page, timeout=20000)
 
-            # Dismiss PWA install prompt if it appears
-            print(f"\n{Fore.YELLOW}⏳  Checking for popups...")
+            # Wait for the app to finish redirecting after KMSI
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=30000)
+            except Exception:
+                pass  # Page may already be loaded
+
+            # ── 7. Dismiss PWA install prompt ──────────────────────────────────
             try:
                 page.wait_for_selector(
                     '//*[@id="download-pwa"]/div[3]/div', timeout=8000
                 )
                 logger.info("PWA install prompt detected — dismissing")
                 page.locator('[data-testid="CloseIcon"]').click(timeout=5000)
-                page.wait_for_load_state("networkidle", timeout=15000)
                 logger.info("PWA prompt dismissed")
-                print(f"{Fore.GREEN}✅  Popup dismissed\n")
+                print(f"{Fore.GREEN}✅  PWA popup dismissed\n")
             except Exception:
-                print(f"{Fore.GREEN}✅  No popup detected\n")
+                pass  # No popup, that's fine
 
-            # ── STEP 2: 2FA ──────────────────────────────────────────────────
-            print(f"{Fore.YELLOW}{'=' * 70}")
-            print(f"{Fore.YELLOW}STEP 2 of 2 — Complete Microsoft 2FA")
-            print(f"{Fore.YELLOW}{'=' * 70}")
-            print(f"{Fore.WHITE}Do ALL of these in the browser first:")
-            print(f"{Fore.GREEN}  1.  A number is shown on screen  →  enter it in Microsoft Authenticator on your phone")
-            print(f"{Fore.GREEN}  2.  Confirm / approve in the Authenticator app")
-            print(f"{Fore.GREEN}  3.  On the confirmation page  →  click NO")
-            print(f"{Fore.GREEN}  4.  Wait for the home page to fully load (all content visible, no spinner)")
-            print(f"\n{Fore.YELLOW}⚠   Do NOT close the browser — the script will close it automatically")
-            print(f"\n{Fore.CYAN}  Then come back here and press ENTER ↵")
-            input()
-
+            # ── 8. Capture session ─────────────────────────────────────────────
             print(f"\n{Fore.YELLOW}📸 Capturing authentication state...")
 
             session_mgr = SessionStateManager()
@@ -247,7 +396,6 @@ def capture_session_for_browser(
                 )
             )
 
-            # Save a timestamped backup alongside the _latest file
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             ts_path = session_path.parent / session_path.name.replace(
                 "_latest.json", f"_{ts}.json"
@@ -283,6 +431,8 @@ def capture_sessions_for_all_browsers(
     app: str = "meditek",
     device: str = "desktop",
     session_dir: str = None,
+    username: str = None,
+    password: str = None,
 ) -> tuple[dict, list]:
     """Capture sessions for every supported browser. Returns (results, failed_browsers)."""
     results: dict[str, str] = {}
@@ -292,7 +442,7 @@ def capture_sessions_for_all_browsers(
         logger.info("[%d/%d] Capturing %s...", i, len(SUPPORTED_BROWSERS), browser)
         try:
             results[browser] = capture_session_for_browser(
-                env, browser, app, device, session_dir
+                env, browser, app, device, session_dir, username, password
             )
         except Exception as e:
             logger.error("Failed to capture %s: %s", browser, e)
@@ -321,9 +471,16 @@ def main():
         help="Target environment",
     )
     parser.add_argument(
-        "--user",
-        default=None,
-        help="Username (optional, for log output only; login is done manually in the browser)",
+        "--username",
+        default=os.getenv("CAPTURE_USERNAME"),
+        help="Username for auto-login (or set CAPTURE_USERNAME env var). "
+        "If omitted, login is done manually in the browser.",
+    )
+    parser.add_argument(
+        "--password",
+        default=os.getenv("CAPTURE_PASSWORD"),
+        help="Password for auto-login (or set CAPTURE_PASSWORD env var). "
+        "Prefer env var over CLI arg to keep password out of shell history.",
     )
     parser.add_argument(
         "--browser",
@@ -349,9 +506,18 @@ def main():
     expires_str = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d %H:%M")
 
     try:
+        if args.username and args.password:
+            print(f"{Fore.CYAN}Auto-login enabled for: {args.username}\n")
+
         if len(browsers) == 1:
             session_path = capture_session_for_browser(
-                args.env, browsers[0], args.app, args.device, args.session_dir
+                args.env,
+                browsers[0],
+                args.app,
+                args.device,
+                args.session_dir,
+                args.username,
+                args.password,
             )
             print(f"\n{'=' * 70}")
             print("SESSION CAPTURED")

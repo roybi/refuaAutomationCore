@@ -1,33 +1,37 @@
 """Environment configuration for MEDITEK test automation."""
 
-import os
 import logging
-from pathlib import Path
+import os
 from dataclasses import dataclass
-from typing import Optional
 from enum import Enum
 from functools import lru_cache
+from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
 class EnvironmentNotSetError(Exception):
     """Raised when TEST_ENV is not set"""
+
     pass
 
 
 class InvalidEnvironmentError(Exception):
     """Raised when TEST_ENV has invalid value"""
+
     pass
 
 
 class UnknownAppError(Exception):
     """Raised when TEST_APP references an unregistered application"""
+
     pass
 
 
 class BrowserType(str, Enum):
     """Supported browser types"""
+
     CHROMIUM = "chromium"
     FIREFOX = "firefox"
     WEBKIT = "webkit"
@@ -40,6 +44,7 @@ class BrowserType(str, Enum):
 
 class EnvType(str, Enum):
     """Supported environment types"""
+
     TEST = "test"
     PREPROD = "preprod"
     PROD = "prod"
@@ -52,6 +57,7 @@ class EnvType(str, Enum):
 @dataclass(frozen=True)
 class AuthConfig:
     """Authentication configuration"""
+
     use_2fa: bool
     bypass_2fa: bool
     session_timeout: int
@@ -61,6 +67,7 @@ class AuthConfig:
 @dataclass(frozen=True)
 class Environment:
     """Environment configuration"""
+
     name: EnvType
     app: str
     base_url: str
@@ -80,7 +87,10 @@ class Environment:
         return Path(self.session_state_dir) / filename
 
     def can_bypass_2fa(self) -> bool:
-        return self.auth_config.bypass_2fa and self.auth_config.auth_method == "session_state"
+        return (
+            self.auth_config.bypass_2fa
+            and self.auth_config.auth_method == "session_state"
+        )
 
 
 # Application registry: app_name → {EnvType → {base_url, api_url, auth_config}}
@@ -94,8 +104,8 @@ _APP_REGISTRY: dict[str, dict[EnvType, dict]] = {
                 use_2fa=True,
                 bypass_2fa=True,
                 session_timeout=3600,
-                auth_method="session_state"
-            )
+                auth_method="session_state",
+            ),
         },
         EnvType.PREPROD: {
             "base_url": "https://meditik.preprod.medical.idf.il",
@@ -104,8 +114,8 @@ _APP_REGISTRY: dict[str, dict[EnvType, dict]] = {
                 use_2fa=True,
                 bypass_2fa=True,
                 session_timeout=3600,
-                auth_method="session_state"
-            )
+                auth_method="session_state",
+            ),
         },
         EnvType.PROD: {
             "base_url": "https://meditik.medical.idf.il/home",
@@ -114,9 +124,9 @@ _APP_REGISTRY: dict[str, dict[EnvType, dict]] = {
                 use_2fa=True,
                 bypass_2fa=False,
                 session_timeout=1800,
-                auth_method="manual"
-            )
-        }
+                auth_method="manual",
+            ),
+        },
     },
     "cpr-go": {
         EnvType.TEST: {
@@ -126,8 +136,8 @@ _APP_REGISTRY: dict[str, dict[EnvType, dict]] = {
                 use_2fa=True,
                 bypass_2fa=True,
                 session_timeout=3600,
-                auth_method="session_state"
-            )
+                auth_method="session_state",
+            ),
         },
         EnvType.PREPROD: {
             "base_url": "https://cpr-go.preprod.medical.idf.il",
@@ -136,8 +146,8 @@ _APP_REGISTRY: dict[str, dict[EnvType, dict]] = {
                 use_2fa=True,
                 bypass_2fa=True,
                 session_timeout=3600,
-                auth_method="session_state"
-            )
+                auth_method="session_state",
+            ),
         },
         EnvType.PROD: {
             "base_url": "https://cpr-go.medical.idf.il",
@@ -146,9 +156,9 @@ _APP_REGISTRY: dict[str, dict[EnvType, dict]] = {
                 use_2fa=True,
                 bypass_2fa=False,
                 session_timeout=1800,
-                auth_method="manual"
-            )
-        }
+                auth_method="manual",
+            ),
+        },
     },
 }
 
@@ -159,9 +169,9 @@ class EnvironmentManager:
     Singleton pattern for consistent state across tests.
     """
 
-    _instance: Optional['EnvironmentManager'] = None
+    _instance: Optional["EnvironmentManager"] = None
 
-    def __new__(cls) -> 'EnvironmentManager':
+    def __new__(cls) -> "EnvironmentManager":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
@@ -178,7 +188,9 @@ class EnvironmentManager:
         self._auth_state_file = self._resolve_auth_state_file()
         self._initialized = True
 
-        logger.info(f"EnvironmentManager initialized: app={self._current_app} env={self._current_env.value}")
+        logger.info(
+            f"EnvironmentManager initialized: app={self._current_app} env={self._current_env.value}"
+        )
         logger.debug(f"Session directory: {self._session_states_dir}")
         if self._auth_state_file:
             logger.debug(f"Auth state file: {self._auth_state_file}")
@@ -226,25 +238,41 @@ class EnvironmentManager:
         # Validate environment value
         if env_str not in EnvType.values():
             raise InvalidEnvironmentError(
-                f"Invalid TEST_ENV value: '{env_str}'\n"
-                f"Valid values: {EnvType.values()}"
+                f"Invalid TEST_ENV value: '{env_str}'\nValid values: {EnvType.values()}"
             )
 
         return EnvType(env_str)
 
     def _resolve_session_dir(self) -> Path:
-        """Return SESSION_DIR env var path, or ~/.refua_sessions by default."""
-        session_dir = os.getenv("SESSION_DIR")
+        """Resolve where session files are stored.
 
-        if session_dir:
-            # Use custom session directory from environment
+        Priority order:
+          1. SESSION_DIR env var — explicit override, always wins
+          2. GitHub Actions  — $GITHUB_WORKSPACE/sessions
+          3. Jenkins         — $WORKSPACE/sessions
+          4. Local default   — ~/.refua_sessions
+        """
+        # 1. Explicit override
+        if session_dir := os.getenv("SESSION_DIR"):
             session_path = Path(session_dir).expanduser().resolve()
-            logger.debug(f"Using custom session directory: {session_path}")
-        else:
-            # Use default external session directory
-            session_path = Path.home() / ".refua_sessions"
-            logger.debug(f"Using default session directory: {session_path}")
+            logger.debug("Session dir (SESSION_DIR): %s", session_path)
+            return session_path
 
+        # 2. GitHub Actions
+        if github_ws := os.getenv("GITHUB_WORKSPACE"):
+            session_path = Path(github_ws) / "sessions"
+            logger.debug("Session dir (GitHub Actions): %s", session_path)
+            return session_path
+
+        # 3. Jenkins
+        if jenkins_ws := os.getenv("WORKSPACE"):
+            session_path = Path(jenkins_ws) / "sessions"
+            logger.debug("Session dir (Jenkins): %s", session_path)
+            return session_path
+
+        # 4. Local development default
+        session_path = Path.home() / ".refua_sessions"
+        logger.debug("Session dir (local default): %s", session_path)
         return session_path
 
     def _resolve_auth_state_file(self) -> Optional[str]:
@@ -295,7 +323,9 @@ class EnvironmentManager:
             raise UnknownAppError(f"App '{self._current_app}' not found in registry")
 
         config = app_configs[env_type]
-        auth_state_file = self._auth_state_file if env_type == self._current_env else None
+        auth_state_file = (
+            self._auth_state_file if env_type == self._current_env else None
+        )
 
         return Environment(
             name=env_type,
@@ -304,9 +334,9 @@ class EnvironmentManager:
             api_url=config["api_url"],
             auth_config=config["auth_config"],
             session_state_dir=str(self._session_states_dir),
-            auth_state_file=auth_state_file
+            auth_state_file=auth_state_file,
         )
-    
+
     @property
     def current_env(self) -> EnvType:
         """Get current environment type"""
@@ -324,19 +354,19 @@ class EnvironmentManager:
         self._current_env = env_type
         self.get_environment.cache_clear()
         logger.info(f"Environment switched to: {env_type.value}")
-    
+
     def get_base_url(self, env_type: Optional[EnvType] = None) -> str:
         """Get base URL for environment"""
         return self.get_environment(env_type).base_url
-    
+
     def get_api_url(self, env_type: Optional[EnvType] = None) -> str:
         """Get API URL for environment"""
         return self.get_environment(env_type).api_url
-    
+
     def should_bypass_2fa(self, env_type: Optional[EnvType] = None) -> bool:
         """Check if 2FA should be bypassed"""
         return self.get_environment(env_type).can_bypass_2fa()
-    
+
     def get_session_dir(self) -> Path:
         """Get session storage directory (external, outside project)"""
         return self._session_states_dir
@@ -355,7 +385,9 @@ class EnvironmentManager:
 
         return browser
 
-    def get_session_file_path(self, env_type: Optional[EnvType] = None, browser: Optional[str] = None) -> Path:
+    def get_session_file_path(
+        self, env_type: Optional[EnvType] = None, browser: Optional[str] = None
+    ) -> Path:
         """Get path to session state file, namespaced by app, env, and browser."""
         env = self.get_environment(env_type)
         if env.auth_state_file:
@@ -370,12 +402,12 @@ class EnvironmentManager:
     def get_session_timeout(self, env_type: Optional[EnvType] = None) -> int:
         """Get session timeout in seconds"""
         return self.get_environment(env_type).auth_config.session_timeout
-    
+
     def is_production(self, env_type: Optional[EnvType] = None) -> bool:
         """Check if environment is production"""
         env = env_type or self._current_env
         return env == EnvType.PROD
-    
+
     def get_env_summary(self) -> str:
         """Get human-readable environment summary"""
         env = self.get_environment()
@@ -384,7 +416,7 @@ class EnvironmentManager:
         session_dir = self.get_session_dir()
 
         return (
-            f"\n{'='*60}\n"
+            f"\n{'=' * 60}\n"
             f"App:              {self._current_app}\n"
             f"Environment:      {env.name.value.upper()}\n"
             f"Base URL:         {env.base_url}\n"
@@ -394,9 +426,9 @@ class EnvironmentManager:
             f"Session Dir:      {session_dir}\n"
             f"Session File:     {session_file}\n"
             f"Session Exists:   {'Yes' if session_exists else 'No'}\n"
-            f"{'='*60}"
+            f"{'=' * 60}"
         )
-    
+
     @classmethod
     def reset_instance(cls):
         """Reset singleton instance (useful for testing)"""
