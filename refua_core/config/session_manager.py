@@ -2,12 +2,19 @@
 
 import json
 import logging
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
-from typing import Optional
-from playwright.sync_api import Page, BrowserContext
+from pathlib import Path
+from typing import Optional, Sequence, cast
 
-from .environment import get_env_manager, EnvType
+from playwright.sync_api import BrowserContext, Page, StorageState
+
+try:
+    from playwright._impl._api_types import \
+        SetCookieParam  # type: ignore[import]
+except ImportError:
+    SetCookieParam = dict  # type: ignore[assignment,misc]
+
+from .environment import EnvType, get_env_manager
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +125,7 @@ class SessionStateManager:
             if cookies:
                 # Filter out expired cookies
                 valid_cookies = self._filter_valid_cookies(cookies)
-                context.add_cookies(valid_cookies)
+                context.add_cookies(cast(Sequence[SetCookieParam], valid_cookies))
                 logger.info(f"Applied {len(valid_cookies)} cookies")
             
             # Store origins data keyed by context id (avoids monkey-patching Playwright objects)
@@ -269,7 +276,7 @@ class SessionStateManager:
         
         return session_path
     
-    def _extract_tokens(self, storage_state: dict) -> dict:
+    def _extract_tokens(self, storage_state: "StorageState | dict") -> dict:
         """Extract token-related items from storage state"""
         tokens = {}
         

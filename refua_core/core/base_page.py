@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import pytest
 from playwright.sync_api import (Browser, BrowserContext, Locator, Page,
@@ -35,11 +35,11 @@ class BasePage:
 
     browser: Browser
     context: BrowserContext
-    page: Page
-    env_mgr = None
+    page: Optional[Page] = None
+    env_mgr: Optional[EnvironmentManager] = None
     browser_type: str = "chromium"
 
-    def __init__(self, page: Page = None):
+    def __init__(self, page: Optional[Page] = None):
         self.page = page
         self.env_mgr = get_env_manager()
 
@@ -83,20 +83,25 @@ class BasePage:
 
     def goto(self, path: str, **kwargs):
         """Navigate to path on the current environment's base URL."""
+        assert self.page and self.env_mgr
         return self.page.goto(f"{self.env_mgr.get_base_url()}{path}", **kwargs)
 
     def wait_for_url(self, path: str, timeout: int = 30000):
         """Wait for navigation to a path relative to the base URL."""
+        assert self.page and self.env_mgr
         self.page.wait_for_url(f"{self.env_mgr.get_base_url()}{path}", timeout=timeout)
 
     def is_visible(self, selector: str) -> bool:
+        assert self.page
         return self.page.locator(selector).is_visible()
 
-    def get_text(self, selector: str) -> str :
+    def get_text(self, selector: str) -> Optional[str]:
+        assert self.page
         return self.page.locator(selector).text_content()
 
     def take_screenshot(self, name: str) -> str:
         """Save a screenshot and return its file path."""
+        assert self.page
         artifacts_dir = Path("test-artifacts") / self.__class__.__name__
         artifacts_dir.mkdir(parents=True, exist_ok=True)
         path = artifacts_dir / f"{name}.png"
@@ -104,12 +109,15 @@ class BasePage:
         return str(path)
 
     def is_production(self) -> bool:
+        assert self.env_mgr
         return self.env_mgr.is_production()
 
     def can_bypass_2fa(self) -> bool:
+        assert self.env_mgr
         return self.env_mgr.should_bypass_2fa()
 
     def get_session_dir(self) -> Path:
+        assert self.env_mgr
         return self.env_mgr.get_session_dir()
 
     def get_browser_name(self) -> str:
@@ -126,4 +134,5 @@ class BasePage:
             el = self.locate(self.LOGIN_BUTTON)
             el.click()
         """
+        assert self.page
         return smart_locator.resolve(self.page)

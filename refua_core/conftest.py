@@ -18,7 +18,7 @@ import os
 import pytest
 from playwright.sync_api import sync_playwright
 
-from refua_core.config.environment import validate_environment, get_env_manager
+from refua_core.config.environment import get_env_manager, validate_environment
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +36,16 @@ def pytest_configure(config):
         os.environ["TEST_ENV"] = test_env
 
     browser = config.getoption("--browser", default=None)
+    # pytest-playwright stores --browser as a list (can pass multiple browsers)
+    if isinstance(browser, list):
+        browser = browser[0] if browser else None
     if browser is not None and browser != "chromium":
         os.environ["BROWSER"] = browser
 
     device = config.getoption("--device", default=None)
+    # pytest-playwright may return device as a string or None
+    if isinstance(device, list):
+        device = device[0] if device else None
     if device is not None and device != "desktop":
         os.environ["DEVICE"] = device
 
@@ -83,14 +89,13 @@ def _log_execution_info():
 
 def pytest_addoption(parser):
     """Register framework-specific CLI options."""
+    from argparse import ArgumentError
+
     parser.addoption("--test-app", default=None,
                      help="Application to test: meditek, cpr-go, or any registered app (default: meditek)")
     parser.addoption("--test-env", default=None,
                      help="Target environment: test, preprod, or prod")
-    parser.addoption("--browser", default="chromium",
-                     help="Browser: chromium, firefox, webkit, safari (default: chromium)")
-    parser.addoption("--device", default="desktop",
-                     help="Device profile: desktop, iphone, android, etc. (default: desktop)")
+    # --browser and --device are owned by pytest-playwright; we read their values in pytest_configure
     parser.addoption("--skip-2fa", default=None,
                      help="Bypass 2FA: true or false")
     parser.addoption("--session-dir", default=None,
