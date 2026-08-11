@@ -209,18 +209,33 @@ class SessionStateManager:
         
         env_type = env_type or self._env_manager.current_env
         
-        # Verify we're on an authenticated page
+        # Verify we're on an authenticated page — log warning but don't block
         if not self.is_authenticated(page):
-            raise ValueError(
-                "Page does not appear to be authenticated.\n"
-                "Complete login before saving session state."
+            logger.warning(
+                "is_authenticated() returned False; saving session anyway "
+                "(caller is responsible for ensuring login completed)."
             )
         
         session_path = self._env_manager.get_session_file_path(env_type)
-        
+
         # Get Playwright's storage state
         storage_state = context.storage_state()
-        
+
+        # The page may still be mid-navigation (OAuth redirects) — reading
+        # title/user agent would throw "Execution context was destroyed".
+        # Retry briefly instead of failing the whole capture.
+        def _read_page_value(getter, default: str) -> str:
+            for _ in range(3):
+                try:
+                    return getter()
+                except Exception:
+                    try:
+                        page.wait_for_load_state("domcontentloaded", timeout=5000)
+                    except Exception:
+                        pass
+            logger.warning("Could not read page metadata; using default %r", default)
+            return default
+
         # Build session data — always store as UTC so validation comparisons are unambiguous
         now = datetime.now(timezone.utc)
         session_data = {
@@ -228,12 +243,14 @@ class SessionStateManager:
             "metadata": {
                 "captured_at": now.isoformat(),
                 "expires_at": (now + timedelta(days=expires_in_days)).isoformat(),
-                "url": page.url,
-                "title": page.title(),
+                "url": _read_page_value(lambda: page.url, ""),
+                "title": _read_page_value(page.title, ""),
                 "environment": self._env_manager.get_base_url(env_type)
             },
             "headers": {
-                "user_agent": page.evaluate("navigator.userAgent")
+                "user_agent": _read_page_value(
+                    lambda: page.evaluate("navigator.userAgent"), ""
+                )
             }
         }
         

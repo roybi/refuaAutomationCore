@@ -1,12 +1,20 @@
 """Base page object for the Page Object Model pattern."""
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from playwright.sync_api import Browser, BrowserContext, Page, sync_playwright
+from playwright.sync_api import (Browser, BrowserContext, Locator, Page,
+                                 sync_playwright)
 
-from refua_core.config.environment import get_env_manager, validate_environment, EnvironmentManager
+from refua_core.config.environment import (EnvironmentManager, get_env_manager,
+                                           validate_environment)
+
+if TYPE_CHECKING:
+    from refua_core.core.smart_locator import SmartLocator
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +92,7 @@ class BasePage:
     def is_visible(self, selector: str) -> bool:
         return self.page.locator(selector).is_visible()
 
-    def get_text(self, selector: str) -> str:
+    def get_text(self, selector: str) -> str :
         return self.page.locator(selector).text_content()
 
     def take_screenshot(self, name: str) -> str:
@@ -106,3 +114,16 @@ class BasePage:
 
     def get_browser_name(self) -> str:
         return self.browser_type
+
+    def locate(self, smart_locator: SmartLocator) -> Locator:
+        """Resolve a SmartLocator against the current page.
+
+        Tries each strategy in priority order (TEST_ID → XPATH → … → TEXT)
+        and returns the first Playwright Locator that matches ≥ 1 element.
+
+        Example::
+
+            el = self.locate(self.LOGIN_BUTTON)
+            el.click()
+        """
+        return smart_locator.resolve(self.page)
