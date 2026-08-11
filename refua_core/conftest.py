@@ -126,6 +126,57 @@ def playwright_instance():
         yield p
 
 
+@pytest.fixture(scope="function")
+def browser_page(request):
+    """Provide a ready-to-use Playwright Page for browser tests.
+
+    Handles the full lifecycle: launch → (optional session load) → yield page
+    → close.  Uses ``TEST_ENV``, ``BROWSER``, and session-state env vars
+    resolved by :class:`EnvironmentManager`.
+
+    Usage in test classes (no BasePage inheritance needed)::
+
+        class TestHomePage:
+            def test_title(self, browser_page):
+                browser_page.goto("https://...")
+                home = homePage(browser_page)
+                assert "כניסה" in home.get_login_title_text()
+    """
+    env_mgr = get_env_manager()
+    browser_type = env_mgr.get_browser_type()
+    headless = request.config.getoption("--headless", default=False)
+    slow_mo = int(request.config.getoption("--slow-motion", default="0"))
+
+    with sync_playwright() as p:
+        launcher = getattr(p, browser_type)
+        browser = launcher.launch(headless=headless, slow_mo=slow_mo)
+
+        context_kwargs: dict = {}
+        session_file = env_mgr.get_session_file_path()
+        if env_mgr.should_bypass_2fa() and session_file.exists():
+            # Session files wrap Playwright's storage state under a
+            # "storage_state" key (with capture metadata alongside). Passing
+            # the raw file path would make Playwright load zero cookies.
+            import json
+
+            session_data = json.loads(session_file.read_text(encoding="utf-8"))
+            context_kwargs["storage_state"] = session_data.get(
+                "storage_state", session_data
+            )
+            logger.info("browser_page: session loaded from %s", session_file)
+        elif env_mgr.should_bypass_2fa():
+            logger.warning("browser_page: session file not found: %s", session_file)
+
+        context = browser.new_context(**context_kwargs)
+        page = context.new_page()
+
+        yield page
+
+        page.close()
+        context.close()
+        browser.close()
+
+
 def pytest_collection_modifyitems(config, items):
     test_env = os.getenv("TEST_ENV", "unknown")
     for item in items:
