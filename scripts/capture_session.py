@@ -366,7 +366,7 @@ def capture_session_for_browser(
                 f"{Fore.YELLOW}⏳  Opening {base_url} — may take a moment on slow network..."
             )
             logger.info("Navigating to %s", base_url)
-            page.goto(base_url, wait_until="domcontentloaded", timeout=120000)
+            page.goto(base_url, wait_until="domcontentloaded", timeout=240000)
 
             # 50% zoom for better visibility on high-resolution screens
             page.evaluate("document.body.style.zoom = '0.5'")
@@ -446,7 +446,31 @@ def capture_session_for_browser(
 
             # Wait for full navigation back to the app (leave Microsoft domain).
             # The sso_reload redirect on this environment can be slow.
-            _wait_for_app_redirect(page, base_url, timeout_seconds=120)
+            _wait_for_app_redirect(page, base_url, timeout_seconds=240)
+
+            # Reaching the app's domain still leaves the SPA on
+            # /login#code=... until it finishes loading its (slow, no-store)
+            # JS bundle and processes the MSAL redirect into localStorage.
+            # Wait for the URL to actually leave /login before capturing,
+            # otherwise storage_state() misses the MSAL tokens entirely.
+            import time as _time
+
+            print(f"{Fore.YELLOW}⏳  Waiting for SPA to finish processing MSAL redirect...")
+            _deadline = _time.monotonic() + 180
+            while _time.monotonic() < _deadline:
+                if "/login" not in page.url.lower():
+                    print(f"{Fore.GREEN}✅  Left /login — SPA finished processing redirect\n")
+                    break
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=3000)
+                except Exception:
+                    pass
+                _time.sleep(1)
+            else:
+                logger.warning(
+                    "Still on /login after 180s (still at %s) — capturing anyway",
+                    page.url,
+                )
 
             # ── 7. Dismiss PWA install prompt ──────────────────────────────────
             try:
