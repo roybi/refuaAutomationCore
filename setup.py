@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from setuptools import find_packages, setup
 
 # Pull version from single source of truth
@@ -33,6 +34,10 @@ setup(
             "flake8>=6.0.0",
             "mypy>=1.0.0",
             "isort>=5.12.0",
+        ],
+        "db": [
+            "psycopg2-binary>=2.9.0",
+            "boto3>=1.34.0",
         ],
     },
     classifiers=[
