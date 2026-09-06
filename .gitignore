@@ -40,3 +40,6 @@ allure-html/
 # OS
 .DS_Store
 Thumbs.db
+
+# MEDITIK element scraper output (regenerable)
+meditik_scrape_output/
