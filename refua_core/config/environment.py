@@ -98,7 +98,7 @@ class Environment:
 _APP_REGISTRY: dict[str, dict[EnvType, dict]] = {
     "meditek": {
         EnvType.TEST: {
-            "base_url": "https://meditik.test.medical.idf.il/home",
+            "base_url": "https://meditik.test.medical.idf.il",
             "api_url": "https://meditik.test.medical.idf.il/api",
             "auth_config": AuthConfig(
                 use_2fa=True,
@@ -118,7 +118,7 @@ _APP_REGISTRY: dict[str, dict[EnvType, dict]] = {
             ),
         },
         EnvType.PROD: {
-            "base_url": "https://meditik.medical.idf.il/home",
+            "base_url": "https://meditik.medical.idf.il",
             "api_url": "https://meditik.medical.idf.il/api",
             "auth_config": AuthConfig(
                 use_2fa=True,
@@ -362,6 +362,52 @@ class EnvironmentManager:
     def get_api_url(self, env_type: Optional[EnvType] = None) -> str:
         """Get API URL for environment"""
         return self.get_environment(env_type).api_url
+
+    def get_automation_login_url(self, personal_number: str, env_type: EnvType) -> str:
+        """Build the 2FA-bypass automation-login URL, threading both params into it.
+
+        env_type selects which registered domain to use (test/preprod/prod each
+        resolve to a different host); personal_number is appended as the path
+        segment: "{root domain for env_type}/automation/login/{personal_number}".
+        Both are required — call sites must be explicit about which environment
+        they're targeting. The secret from get_automation_secret() is sent as the
+        x-automation-secret header on the resulting request — never as part of the URL.
+        """
+        from urllib.parse import urlparse
+
+        parsed = urlparse(self.get_base_url(env_type))
+        root_url = f"{parsed.scheme}://{parsed.netloc}"
+        return f"{root_url}/automation/login/{personal_number}"
+
+    @staticmethod
+    def get_automation_secret() -> Optional[str]:
+        """Return AUTOMATION_SECRET env var — must match the value configured in the backend.
+
+        Sent as the x-automation-secret header (never the URL) when calling
+        the /automation/login/:personalNumber 2FA-bypass route.
+        """
+        return os.getenv("AUTOMATION_SECRET")
+
+    def apply_automation_secret_header(self, page) -> None:
+        """Register Playwright request interception that injects the automation secret header.
+
+        Scoped to **/automation/login/** only, so no other request gets the secret.
+        Call this BEFORE page.goto(get_automation_login_url(...)) — the header is
+        added on the outbound request itself, never present in the URL or in any
+        browser-visible state.
+        """
+        secret = self.get_automation_secret()
+        if not secret:
+            raise ValueError(
+                "AUTOMATION_SECRET is not set — cannot inject the automation-login header.\n"
+                "Set it as an env var, or in .env.test / .env.local."
+            )
+
+        def _inject_secret(route):
+            headers = {**route.request.headers, "x-automation-secret": secret}
+            route.continue_(headers=headers)
+
+        page.route("**/automation/login/**", _inject_secret)
 
     def should_bypass_2fa(self, env_type: Optional[EnvType] = None) -> bool:
         """Check if 2FA should be bypassed"""

@@ -1,4 +1,4 @@
-__version__ = "1.0.1"
+__version__ = "2.0.0"
 __framework_name__ = "Refua Automation Core"
 __framework_author__ = "Refua Team"
 

@@ -40,12 +40,9 @@ if hasattr(sys.stderr, "reconfigure"):
 from colorama import Fore, init
 from playwright.sync_api import sync_playwright
 
-from refua_core.config.environment import (
-    _APP_REGISTRY,
-    EnvironmentManager,
-    InvalidEnvironmentError,
-    UnknownAppError,
-)
+from refua_core.config.environment import (_APP_REGISTRY, EnvironmentManager,
+                                           InvalidEnvironmentError,
+                                           UnknownAppError)
 from refua_core.config.session_manager import SessionStateManager
 
 init(autoreset=True)
@@ -181,6 +178,12 @@ def _wait_for_2fa_page(page, base_url: str, timeout_seconds: int = 300) -> bool:
     ]
     deadline = time.monotonic() + timeout_seconds
     dots = 0
+    # Only trust "back on app host" as a login-complete signal once we've
+    # actually seen the browser leave to Microsoft's login domain first —
+    # otherwise the initial page load (base_url is itself on app_host,
+    # e.g. /home, before the login redirect even happens) would falsely
+    # look like a completed login.
+    visited_microsoft = False
     while time.monotonic() < deadline:
         for sel in _2fa_selectors:
             try:
@@ -190,15 +193,20 @@ def _wait_for_2fa_page(page, base_url: str, timeout_seconds: int = 300) -> bool:
             except Exception:
                 pass
 
+        current_url = page.url
+        if "microsoftonline.com" in current_url or "login.microsoft" in current_url:
+            visited_microsoft = True
+
         # Microsoft may skip the 2FA prompt entirely (cached device trust,
         # conditional access, ...). If the browser is already back in the app
-        # past the login page, treat login as complete.
-        parsed = urlparse(page.url)
-        if parsed.netloc == app_host and parsed.path not in ("", "/", "/home"):
+        # (any path, including /home) after having been on Microsoft's login
+        # domain, treat login as complete.
+        parsed = urlparse(current_url)
+        if visited_microsoft and parsed.netloc == app_host:
             print(
                 f"\n{Fore.GREEN}✅  Logged in without a 2FA prompt — browser is back in the app\n"
             )
-            logger.info("Login completed without 2FA prompt: %s", page.url)
+            logger.info("Login completed without 2FA prompt: %s", current_url)
             return False
         try:
             # KMSI 'No' button — only present on the 'Stay signed in?' page

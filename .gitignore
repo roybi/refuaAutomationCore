@@ -43,3 +43,8 @@ Thumbs.db
 
 # MEDITIK element scraper output (regenerable)
 meditik_scrape_output/
+meditik_scrape_output*.zip
+
+# Local automation-login debug dump (contains cookies/localStorage)
+local_login_debug.json
+

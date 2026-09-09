@@ -240,8 +240,13 @@ def main(argv=None):
             if not sess.exists():
                 print(f"Session file not found: {sess}", file=sys.stderr)
                 return 2
+            # Our session files wrap Playwright's storage_state under a
+            # "storage_state" key (plus "metadata"/"tokens"); unwrap it here
+            # since new_context() expects the native top-level schema.
+            session_json = json.loads(sess.read_text(encoding="utf-8"))
+            storage_state = session_json.get("storage_state", session_json)
             browser = p.chromium.launch(headless=not args.headful)
-            ctx = browser.new_context(storage_state=str(sess), ignore_https_errors=True)
+            ctx = browser.new_context(storage_state=storage_state, ignore_https_errors=True)
             page = ctx.new_page()
             page.goto(args.base + HOME_PATH, wait_until="domcontentloaded", timeout=60000)
             results = crawl(page, args.base, args.forms, args.screenshots, shots_dir)
