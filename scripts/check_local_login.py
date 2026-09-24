@@ -1,5 +1,5 @@
 """
-Standalone local-login check for the Meditik frontend.
+Standalone automation-login check for the MEDITIK / CPR-GO frontends.
 
 Auth model (automation -> front -> back):
   The automation secret lives ONLY in the meditik backend .env and in this
@@ -23,10 +23,12 @@ This file is intentionally self-contained. It does NOT touch conftest.py or the 
 
 Usage (from the repo root):
     # AUTOMATION_SECRET must be set (env var or in .env.test / .env.local)
-    python scripts/check_local_login.py                        # localhost:4200, default personalNumber
-    python scripts/check_local_login.py 4444401                 # explicit personalNumber
+    python scripts/check_local_login.py                                   # localhost:4200, default personalNumber
+    python scripts/check_local_login.py 4444401                            # explicit personalNumber
     python scripts/check_local_login.py 4444401 --headless
-    TEST_ENV=test python scripts/check_local_login.py 4444401   # resolves URL from EnvironmentManager
+    python scripts/check_local_login.py 4444401 --app meditik --env test   # https://meditik.test.medical.idf.il
+    python scripts/check_local_login.py 4444401 --app cpr --env preprod    # https://cpr-go.preprod.medical.idf.il
+    TEST_APP=cpr-go TEST_ENV=test python scripts/check_local_login.py      # same, via env vars
 
 Requires Playwright browsers to be installed:
     playwright install chromium
@@ -85,9 +87,18 @@ def _load_env_files():
 def parse_args(argv):
     personal_number = DEFAULT_PERSONAL_NUMBER
     headless = False
-    for arg in argv[1:]:
+    args = iter(argv[1:])
+    for arg in args:
         if arg == "--headless":
             headless = True
+        elif arg == "--app":
+            os.environ["TEST_APP"] = next(args)
+        elif arg == "--env":
+            os.environ["TEST_ENV"] = next(args)
+        elif arg.startswith("--app="):
+            os.environ["TEST_APP"] = arg.split("=", 1)[1]
+        elif arg.startswith("--env="):
+            os.environ["TEST_ENV"] = arg.split("=", 1)[1]
         elif not arg.startswith("--"):
             personal_number = arg
     return personal_number, headless
@@ -126,6 +137,7 @@ def main():
     login_url = _build_login_url(personal_number)
 
     print(f"[check] personalNumber = {personal_number}")
+    print(f"[check] TEST_APP       = {os.getenv('TEST_APP') or 'meditek (default)'}")
     print(f"[check] TEST_ENV       = {os.getenv('TEST_ENV') or '(not set — using BASE_URL/localhost)'}")
     print(f"[check] opening        = {login_url}")
     print(f"[check] headless       = {headless}")
@@ -238,6 +250,9 @@ def main():
         with open("local_login_debug.json", "w", encoding="utf-8") as f:
             json.dump(debug, f, ensure_ascii=False, indent=2)
         print("[check] full state written to local_login_debug.json")
+
+        if not headless:
+            input("\n[check] Browser left open for inspection — press Enter here to close it...")
 
         context.close()
         browser.close()

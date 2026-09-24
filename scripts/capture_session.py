@@ -40,9 +40,10 @@ if hasattr(sys.stderr, "reconfigure"):
 from colorama import Fore, init
 from playwright.sync_api import sync_playwright
 
-from refua_core.config.environment import (_APP_REGISTRY, EnvironmentManager,
+from refua_core.config.environment import (EnvironmentManager,
                                            InvalidEnvironmentError,
-                                           UnknownAppError)
+                                           UnknownAppError, known_app_names,
+                                           resolve_app_name)
 from refua_core.config.session_manager import SessionStateManager
 
 init(autoreset=True)
@@ -183,7 +184,23 @@ def _wait_for_2fa_page(page, base_url: str, timeout_seconds: int = 300) -> bool:
     # otherwise the initial page load (base_url is itself on app_host,
     # e.g. /home, before the login redirect even happens) would falsely
     # look like a completed login.
-    visited_microsoft = False
+    # Seed from the URL we're already on: if login + 2FA both completed
+    # before this function was even called (fast/cached approval), we'd
+    # otherwise never observe the microsoftonline.com hop and would spin
+    # until timeout even though the browser is already back in the app.
+    initial_url = page.url
+    initial_parsed = urlparse(initial_url)
+    if "microsoftonline.com" in initial_url or "login.microsoft" in initial_url:
+        visited_microsoft = True
+    elif initial_parsed.netloc == app_host and initial_parsed.path not in ("", "/"):
+        # A deeper path (e.g. /visit, /home) means we're past the bare
+        # pre-login landing page — login+2FA already completed before this
+        # function was called (fast/cached approval).
+        print(f"\n{Fore.GREEN}✅  Already logged in — browser is back in the app\n")
+        logger.info("Login already complete on entry: %s", initial_url)
+        return False
+    else:
+        visited_microsoft = False
     while time.monotonic() < deadline:
         for sel in _2fa_selectors:
             try:
@@ -564,7 +581,7 @@ def capture_sessions_for_all_browsers(
 
 
 def main():
-    known_apps = list(_APP_REGISTRY.keys())
+    known_apps = known_app_names()
 
     parser = argparse.ArgumentParser(
         description="Capture authenticated browser sessions for reuse in test runs.",
@@ -601,6 +618,7 @@ def main():
     )
 
     args = parser.parse_args()
+    args.app = resolve_app_name(args.app)
 
     browsers = _browsers_to_capture(args.browser)
     expires_str = (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d %H:%M")

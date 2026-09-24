@@ -93,74 +93,74 @@ class Environment:
         )
 
 
+ROOT_DOMAIN = "medical.idf.il"
+
+_NON_PROD_AUTH = AuthConfig(
+    use_2fa=True, bypass_2fa=True, session_timeout=3600, auth_method="session_state"
+)
+_PROD_AUTH = AuthConfig(
+    use_2fa=True, bypass_2fa=False, session_timeout=1800, auth_method="manual"
+)
+
+
+def build_app_url(subdomain: str, env_type: EnvType, domain: str = ROOT_DOMAIN) -> str:
+    """https://{subdomain}.{env}.{domain} — prod has no env segment."""
+    env_segment = "" if env_type == EnvType.PROD else f"{env_type.value}."
+    return f"https://{subdomain}.{env_segment}{domain}"
+
+
+def _standard_app_config(subdomain: str) -> dict[EnvType, dict]:
+    configs = {}
+    for env_type in EnvType:
+        base_url = build_app_url(subdomain, env_type)
+        configs[env_type] = {
+            "base_url": base_url,
+            "api_url": f"{base_url}/api",
+            "auth_config": _PROD_AUTH if env_type == EnvType.PROD else _NON_PROD_AUTH,
+        }
+    return configs
+
+
 # Application registry: app_name → {EnvType → {base_url, api_url, auth_config}}
 # Register additional apps via EnvironmentManager.register_app() before instantiation.
 _APP_REGISTRY: dict[str, dict[EnvType, dict]] = {
-    "meditek": {
-        EnvType.TEST: {
-            "base_url": "https://meditik.test.medical.idf.il",
-            "api_url": "https://meditik.test.medical.idf.il/api",
-            "auth_config": AuthConfig(
-                use_2fa=True,
-                bypass_2fa=True,
-                session_timeout=3600,
-                auth_method="session_state",
-            ),
-        },
-        EnvType.PREPROD: {
-            "base_url": "https://meditik.preprod.medical.idf.il",
-            "api_url": "https://meditik.preprod.medical.idf.il/api",
-            "auth_config": AuthConfig(
-                use_2fa=True,
-                bypass_2fa=True,
-                session_timeout=3600,
-                auth_method="session_state",
-            ),
-        },
-        EnvType.PROD: {
-            "base_url": "https://meditik.medical.idf.il",
-            "api_url": "https://meditik.medical.idf.il/api",
-            "auth_config": AuthConfig(
-                use_2fa=True,
-                bypass_2fa=False,
-                session_timeout=1800,
-                auth_method="manual",
-            ),
-        },
-    },
-    "cpr-go": {
-        EnvType.TEST: {
-            "base_url": "https://cpr-go.test.medical.idf.il",
-            "api_url": "https://cpr-go.test.medical.idf.il/api",
-            "auth_config": AuthConfig(
-                use_2fa=True,
-                bypass_2fa=True,
-                session_timeout=3600,
-                auth_method="session_state",
-            ),
-        },
-        EnvType.PREPROD: {
-            "base_url": "https://cpr-go.preprod.medical.idf.il",
-            "api_url": "https://cpr-go.preprod.medical.idf.il/api",
-            "auth_config": AuthConfig(
-                use_2fa=True,
-                bypass_2fa=True,
-                session_timeout=3600,
-                auth_method="session_state",
-            ),
-        },
-        EnvType.PROD: {
-            "base_url": "https://cpr-go.medical.idf.il",
-            "api_url": "https://cpr-go.medical.idf.il/api",
-            "auth_config": AuthConfig(
-                use_2fa=True,
-                bypass_2fa=False,
-                session_timeout=1800,
-                auth_method="manual",
-            ),
-        },
-    },
+    "meditek": _standard_app_config("meditik"),
+    "cpr-go": _standard_app_config("cpr-go"),
 }
+
+# Short names accepted on the CLI / TEST_APP in addition to the registry keys.
+_APP_ALIASES: dict[str, str] = {
+    "meditik": "meditek",
+    "cpr": "cpr-go",
+    "cprgo": "cpr-go",
+}
+
+
+def resolve_app_name(app: str) -> str:
+    """Normalize an app name or alias (e.g. 'cpr', 'meditik') to its registry key."""
+    key = app.lower().strip()
+    key = _APP_ALIASES.get(key, key)
+    if key not in _APP_REGISTRY:
+        raise UnknownAppError(
+            f"Unknown app: '{app}'\n"
+            f"Known apps: {list(_APP_REGISTRY.keys())} (aliases: {list(_APP_ALIASES.keys())})"
+        )
+    return key
+
+
+def known_app_names() -> list[str]:
+    """All accepted app names including aliases (for CLI choices)."""
+    return list(_APP_REGISTRY.keys()) + list(_APP_ALIASES.keys())
+
+
+def get_app_base_url(app: str, env: str) -> str:
+    """Resolve base URL from app + env strings without touching the singleton."""
+    env_key = env.lower().strip()
+    if env_key not in EnvType.values():
+        raise InvalidEnvironmentError(
+            f"Invalid env: '{env}'\nValid values: {EnvType.values()}"
+        )
+    return _APP_REGISTRY[resolve_app_name(app)][EnvType(env_key)]["base_url"]
 
 
 class EnvironmentManager:
@@ -210,16 +210,14 @@ class EnvironmentManager:
 
     def _resolve_app_from_system(self) -> str:
         """Resolve app name from TEST_APP; default to 'meditek' for backward compatibility."""
-        app_str = os.getenv("TEST_APP", "meditek").lower().strip()
+        app_str = os.getenv("TEST_APP", "meditek")
 
-        if app_str not in _APP_REGISTRY:
+        try:
+            return resolve_app_name(app_str)
+        except UnknownAppError as e:
             raise UnknownAppError(
-                f"Unknown TEST_APP value: '{app_str}'\n"
-                f"Known apps: {list(_APP_REGISTRY.keys())}\n"
-                "Register custom apps with EnvironmentManager.register_app() before use."
-            )
-
-        return app_str
+                f"{e}\nRegister custom apps with EnvironmentManager.register_app() before use."
+            ) from None
 
     def _resolve_env_from_system(self) -> EnvType:
         """Resolve EnvType from TEST_ENV; raise if missing or invalid."""

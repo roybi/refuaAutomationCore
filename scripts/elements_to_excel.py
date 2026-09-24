@@ -15,7 +15,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-HEADERS = ["Page", "Element Name", "Has data-testid", "data-testid Value", "Identification (XPath)"]
+HEADERS = ["Page", "Element Name", "Type of Element", "Has data-testid", "data-testid Value", "Identification (XPath)"]
 
 
 def build_workbook(results: dict) -> Workbook:
@@ -40,6 +40,7 @@ def build_workbook(results: dict) -> Workbook:
             ws.append([
                 page,
                 r.get("name", ""),
+                r.get("type", ""),
                 r.get("has_testid", ""),
                 r.get("testid", ""),
                 r.get("xpath", ""),
@@ -48,7 +49,7 @@ def build_workbook(results: dict) -> Workbook:
 
     # Right-to-left friendly + readable column widths
     ws.sheet_view.rightToLeft = True
-    widths = [22, 45, 14, 40, 55]
+    widths = [22, 45, 18, 14, 40, 55]
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
 

@@ -149,6 +149,7 @@ class MyPage(BasePage):
 The single source of truth is `refua_core/version.py`. Bump it there only; `setup.py` reads it at build time.
 
 Versioning policy:
+
 - Patch — bug fixes, internal refactors
 - Minor — new features, new fixtures/config options
 - Major — breaking changes (renamed class, removed method, changed fixture signature)
@@ -167,16 +168,16 @@ git push origin <branch> --tags
 
 ## Environment variable reference
 
-| Variable | Required | Default | Values |
-|---|---|---|---|
-| `TEST_ENV` | **Yes** | — | `test`, `preprod`, `prod` |
-| `TEST_APP` | No | `meditek` | `meditek`, `cpr-go`, registered app name |
-| `BROWSER` | No | `chromium` | `chromium`, `firefox`, `webkit`, `safari` |
-| `DEVICE` | No | `desktop` | `desktop`, `iphone`, `android`, model name |
-| `SESSION_DIR` | No | `~/.refua_sessions` | any path |
-| `SKIP_2FA` | No | `true` | `true`, `false` |
-| `RECORD_VIDEO` | No | `true` | `true`, `false` |
-| `CAPTURE_SCREENSHOTS` | No | `true` | `true`, `false` |
+| Variable              | Required | Default             | Values                                                   |
+| --------------------- | -------- | ------------------- | -------------------------------------------------------- |
+| `TEST_ENV`            | **Yes**  | —                   | `test`, `preprod`, `prod`                                |
+| `TEST_APP`            | No       | `meditek`           | `meditek`/`meditik`, `cpr-go`/`cpr`, registered app name |
+| `BROWSER`             | No       | `chromium`          | `chromium`, `firefox`, `webkit`, `safari`                |
+| `DEVICE`              | No       | `desktop`           | `desktop`, `iphone`, `android`, model name               |
+| `SESSION_DIR`         | No       | `~/.refua_sessions` | any path                                                 |
+| `SKIP_2FA`            | No       | `true`              | `true`, `false`                                          |
+| `RECORD_VIDEO`        | No       | `true`              | `true`, `false`                                          |
+| `CAPTURE_SCREENSHOTS` | No       | `true`              | `true`, `false`                                          |
 
 CLI equivalents registered by the plugin: `--test-app`, `--test-env`, `--browser`, `--device`, `--skip-2fa`, `--session-dir`, `--record-video`, `--capture-screenshots`, `--headless`, `--slow-motion`.
 
