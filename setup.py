@@ -1,10 +1,14 @@
+import re
 from pathlib import Path
 
 from setuptools import find_packages, setup
 
 # Pull version from single source of truth
-about: dict = {}
-exec((Path(__file__).parent / "refua_core" / "version.py").read_text(), about)
+_version_src = (Path(__file__).parent / "refua_core" / "version.py").read_text(encoding="utf-8")
+_match = re.search(r"^__version__\s*=\s*['\"]([^'\"]+)['\"]", _version_src, re.M)
+if not _match:
+    raise RuntimeError("Unable to find __version__ in refua_core/version.py")
+about = {"__version__": _match.group(1)}
 
 readme = Path(__file__).parent / "README.md"
 

@@ -304,6 +304,12 @@ def crawl_generic(page, base, do_shots, shots_dir, max_pages=25):
     return results
 
 
+def _csv_safe(value):
+    """Neutralise spreadsheet formula injection (cells starting with = + - @ tab CR)."""
+    text = str(value)
+    return "'" + text if text.startswith(("=", "+", "-", "@", "\t", "\r")) else text
+
+
 def write_outputs(results, out_dir):
     csv_path = out_dir / "elements.csv"
     json_path = out_dir / "elements.json"
@@ -314,7 +320,7 @@ def write_outputs(results, out_dir):
             if d.get("off_domain"):
                 continue
             for r in d["rows"]:
-                w.writerow([pg, r["name"], r.get("type", ""), r["has_testid"], r["xpath"]])
+                w.writerow([_csv_safe(v) for v in (pg, r["name"], r.get("type", ""), r["has_testid"], r["xpath"])])
     json_path.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
 
     summary = []
