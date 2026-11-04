@@ -30,6 +30,7 @@ import shutil
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Force UTF-8 output on Windows — must happen before any print() or logging
 if hasattr(sys.stdout, "reconfigure"):
@@ -77,6 +78,15 @@ _DEVICE_MAP = {
     "android_pixel": "Pixel 7",
     "android_galaxy": "Galaxy S9+",
 }
+
+
+def _is_microsoft_login(url: str) -> bool:
+    """True if the URL's host is a Microsoft login host (not a substring match)."""
+    host = (urlparse(url).hostname or "").lower()
+    return any(
+        host == d or host.endswith("." + d)
+        for d in ("microsoftonline.com", "login.microsoft.com")
+    )
 
 
 def _setup_env_manager(
@@ -164,8 +174,6 @@ def _wait_for_2fa_page(page, base_url: str, timeout_seconds: int = 300) -> bool:
     Raises TimeoutError if neither happens within timeout_seconds.
     """
     import time
-    from urllib.parse import urlparse
-
     app_host = urlparse(base_url).netloc
 
     _2fa_selectors = [
@@ -190,7 +198,7 @@ def _wait_for_2fa_page(page, base_url: str, timeout_seconds: int = 300) -> bool:
     # until timeout even though the browser is already back in the app.
     initial_url = page.url
     initial_parsed = urlparse(initial_url)
-    if "microsoftonline.com" in initial_url or "login.microsoft" in initial_url:
+    if _is_microsoft_login(initial_url):
         visited_microsoft = True
     elif initial_parsed.netloc == app_host and initial_parsed.path not in ("", "/"):
         # A deeper path (e.g. /visit, /home) means we're past the bare
@@ -211,7 +219,7 @@ def _wait_for_2fa_page(page, base_url: str, timeout_seconds: int = 300) -> bool:
                 pass
 
         current_url = page.url
-        if "microsoftonline.com" in current_url or "login.microsoft" in current_url:
+        if _is_microsoft_login(current_url):
             visited_microsoft = True
 
         # Microsoft may skip the 2FA prompt entirely (cached device trust,
@@ -267,10 +275,7 @@ def _wait_for_post_2fa(page, base_url: str, timeout_seconds: int = 180) -> None:
     while time.monotonic() < deadline:
         current_url = page.url
         # Redirected back to the app or KMSI interstitial
-        if (
-            "microsoftonline.com" not in current_url
-            and "login.microsoft" not in current_url
-        ):
+        if not _is_microsoft_login(current_url):
             print(f"\n{Fore.GREEN}✅  2FA approved — browser left Microsoft login\n")
             return
         for sel in _post_2fa_selectors:
@@ -297,8 +302,6 @@ def _wait_for_post_2fa(page, base_url: str, timeout_seconds: int = 180) -> None:
 def _wait_for_app_redirect(page, base_url: str, timeout_seconds: int = 30) -> None:
     """Wait until the page URL is on the app domain (not Microsoft login)."""
     import time
-    from urllib.parse import urlparse
-
     app_host = urlparse(base_url).netloc
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
@@ -311,7 +314,7 @@ def _wait_for_app_redirect(page, base_url: str, timeout_seconds: int = 30) -> No
             logger.info("App URL reached: %s", page.url)
             print(f"{Fore.GREEN}✅  Redirected back to app ({current_host})\n")
             return
-        if "microsoftonline.com" not in page.url and "login.microsoft" not in page.url:
+        if not _is_microsoft_login(page.url):
             logger.info("Left Microsoft domain — URL: %s", page.url)
             print(f"{Fore.GREEN}✅  Left Microsoft login domain\n")
             return
