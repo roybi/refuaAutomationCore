@@ -25,8 +25,8 @@ setup(
     python_requires=">=3.9",
     install_requires=[
         "playwright>=1.40.0",
-        "python-dotenv>=1.0.0",
-        "requests>=2.31.0",
+        "python-dotenv>=1.2.2",
+        "requests>=2.33.0",
         "packaging>=21.0",
         "colorama>=0.4.6",
         "defusedcsv>=3.0.0",
