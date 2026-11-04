@@ -43,7 +43,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 
-from defusedcsv import csv
+from defusedcsv.csv import writer as safe_csv_writer
 from playwright.sync_api import sync_playwright
 
 from refua_core.config.environment import (get_app_base_url, known_app_names,
@@ -308,7 +308,7 @@ def write_outputs(results, out_dir):
     csv_path = out_dir / "elements.csv"
     json_path = out_dir / "elements.json"
     with csv_path.open("w", encoding="utf-8-sig", newline="") as f:
-        w = csv.writer(f)
+        w = safe_csv_writer(f)
         w.writerow(["page", "name of the element", "type of element", "have data-testid", "identification (short xpath)"])
         for pg, d in results.items():
             if d.get("off_domain"):
