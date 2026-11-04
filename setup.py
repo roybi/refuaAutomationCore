@@ -22,7 +22,7 @@ setup(
     url="https://github.com/roybi/refuaAutomationCore",
     license="Proprietary",
     packages=find_packages(exclude=["tests*", "*.tests"]),
-    python_requires=">=3.9",
+    python_requires=">=3.10",
     install_requires=[
         "playwright>=1.40.0",
         "python-dotenv>=1.2.2",
@@ -51,7 +51,6 @@ setup(
         "License :: Other/Proprietary License",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
