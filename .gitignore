@@ -48,3 +48,9 @@ meditik_scrape_output*.zip
 # Local automation-login debug dump (contains cookies/localStorage)
 local_login_debug.json
 
+
+# Scrape/screenshot outputs and MCP scratch
+cprgo_scrape_output/
+cprgo_scrape_output*.zip
+home_screen.png
+.playwright-mcp/
